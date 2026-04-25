@@ -1,0 +1,4 @@
+- 使用 uv 管理 python 环境和安装包
+- 使用 pnpm 管理 ts 项目的依赖和构建
+- 使用 vite 作为 ts 项目的构建工具
+- 用 prek (uv add) 作为 git-pre-commit 钩子，确保提交前运行 lint
