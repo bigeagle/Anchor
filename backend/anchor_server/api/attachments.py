@@ -75,12 +75,17 @@ def download_attachment(
         raise HTTPException(status_code=404, detail="Attachment not found")
 
     data = storage.read_attachment(attachment.storage_path)
+    # Let browsers display PDFs inline; other files are offered as downloads.
+    if attachment.content_type == "application/pdf":
+        headers = {"Content-Disposition": "inline"}
+    else:
+        headers = {
+            "Content-Disposition": f'attachment; filename="{attachment.filename}"'
+        }
     return Response(
         content=data,
         media_type=attachment.content_type or "application/octet-stream",
-        headers={
-            "Content-Disposition": f'attachment; filename="{attachment.filename}"'
-        },
+        headers=headers,
     )
 
 
