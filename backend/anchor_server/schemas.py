@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from anchor_server.enums import ItemType
+
 
 class AttachmentOut(BaseModel):
     """Attachment representation returned by the API."""
@@ -24,7 +26,7 @@ class ItemBase(BaseModel):
     """Shared bibliographic fields."""
 
     title: str = Field(..., min_length=1)
-    item_type: str = Field(default="journalArticle")
+    item_type: ItemType = Field(default=ItemType.JOURNAL_ARTICLE)
     authors: list[dict[str, Any]] = Field(default_factory=list)
     abstract: str | None = None
     publication: str | None = None
@@ -47,7 +49,7 @@ class ItemUpdate(BaseModel):
     """Schema for updating an existing item; all fields are optional."""
 
     title: str | None = Field(default=None, min_length=1)
-    item_type: str | None = None
+    item_type: ItemType | None = None
     authors: list[dict[str, Any]] | None = None
     abstract: str | None = None
     publication: str | None = None

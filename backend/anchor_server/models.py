@@ -8,6 +8,7 @@ from sqlalchemy import JSON, ForeignKey, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from anchor_server.database import Base
+from anchor_server.enums import ItemType
 
 
 def utc_now() -> datetime:
@@ -27,7 +28,7 @@ class Item(Base):
     )
     title: Mapped[str] = mapped_column(Text, nullable=False)
     item_type: Mapped[str] = mapped_column(
-        String(64), nullable=False, default="journalArticle"
+        String(64), nullable=False, default=ItemType.JOURNAL_ARTICLE.value
     )
     authors: Mapped[list[dict[str, Any]]] = mapped_column(
         JSON, nullable=False, default=list

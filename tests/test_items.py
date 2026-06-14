@@ -100,3 +100,22 @@ def test_create_item_validation(client: TestClient):
     """Creating an item without a title should fail validation."""
     response = client.post("/items/", json={"title": ""})
     assert response.status_code == 422
+
+
+def test_create_item_invalid_type(client: TestClient):
+    """An unsupported item_type should fail validation."""
+    response = client.post(
+        "/items/",
+        json={"title": "Bad Type", "item_type": "notARealType"},
+    )
+    assert response.status_code == 422
+
+
+def test_update_item_type(client: TestClient, sample_item_payload):
+    """Updating item_type to another valid enum value should work."""
+    created = client.post("/items/", json=sample_item_payload).json()
+    item_id = created["id"]
+
+    response = client.put(f"/items/{item_id}", json={"item_type": "book"})
+    assert response.status_code == 200
+    assert response.json()["item_type"] == "book"
