@@ -10,11 +10,13 @@ app = FastAPI(
     version="0.1.0",
 )
 
-app.include_router(items.router)
-app.include_router(attachments.router)
+API_PREFIX = "/api/v1"
+
+app.include_router(items.router, prefix=API_PREFIX)
+app.include_router(attachments.router, prefix=API_PREFIX)
 
 
-@app.get("/healthz", tags=["health"])
+@app.get(f"{API_PREFIX}/healthz", tags=["health"])
 def health_check() -> dict[str, str]:
     """Simple health check endpoint."""
     return {"status": "ok"}

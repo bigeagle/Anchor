@@ -21,7 +21,7 @@ def sample_item_payload():
 
 def test_create_item(client: TestClient, sample_item_payload):
     """POST /items should create and return the new item."""
-    response = client.post("/items/", json=sample_item_payload)
+    response = client.post("/api/v1/items/", json=sample_item_payload)
     assert response.status_code == 201
     data = response.json()
     assert data["title"] == sample_item_payload["title"]
@@ -33,24 +33,24 @@ def test_create_item(client: TestClient, sample_item_payload):
 
 def test_list_items(client: TestClient, sample_item_payload):
     """GET /items should return created items with optional filtering."""
-    client.post("/items/", json=sample_item_payload)
+    client.post("/api/v1/items/", json=sample_item_payload)
 
-    response = client.get("/items/")
+    response = client.get("/api/v1/items/")
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1
     assert data[0]["title"] == sample_item_payload["title"]
 
-    response = client.get("/items/?q=Nonexistent")
+    response = client.get("/api/v1/items/?q=Nonexistent")
     assert response.json() == []
 
 
 def test_get_item(client: TestClient, sample_item_payload):
     """GET /items/{id} should return a single item."""
-    created = client.post("/items/", json=sample_item_payload).json()
+    created = client.post("/api/v1/items/", json=sample_item_payload).json()
     item_id = created["id"]
 
-    response = client.get(f"/items/{item_id}")
+    response = client.get(f"/api/v1/items/{item_id}")
     assert response.status_code == 200
     assert response.json()["id"] == item_id
 
@@ -63,10 +63,10 @@ def test_get_item_not_found(client: TestClient):
 
 def test_update_item(client: TestClient, sample_item_payload):
     """PUT /items/{id} should update allowed fields."""
-    created = client.post("/items/", json=sample_item_payload).json()
+    created = client.post("/api/v1/items/", json=sample_item_payload).json()
     item_id = created["id"]
 
-    response = client.put(f"/items/{item_id}", json={"title": "Updated Title"})
+    response = client.put(f"/api/v1/items/{item_id}", json={"title": "Updated Title"})
     assert response.status_code == 200
     data = response.json()
     assert data["title"] == "Updated Title"
@@ -81,13 +81,13 @@ def test_update_item_not_found(client: TestClient):
 
 def test_delete_item(client: TestClient, sample_item_payload):
     """DELETE /items/{id} should remove the item."""
-    created = client.post("/items/", json=sample_item_payload).json()
+    created = client.post("/api/v1/items/", json=sample_item_payload).json()
     item_id = created["id"]
 
-    response = client.delete(f"/items/{item_id}")
+    response = client.delete(f"/api/v1/items/{item_id}")
     assert response.status_code == 204
 
-    response = client.get(f"/items/{item_id}")
+    response = client.get(f"/api/v1/items/{item_id}")
     assert response.status_code == 404
 
 
@@ -99,14 +99,14 @@ def test_delete_item_not_found(client: TestClient):
 
 def test_create_item_validation(client: TestClient):
     """Creating an item without a title should fail validation."""
-    response = client.post("/items/", json={"title": ""})
+    response = client.post("/api/v1/items/", json={"title": ""})
     assert response.status_code == 422
 
 
 def test_create_item_invalid_type(client: TestClient):
     """An unsupported item_type should fail validation."""
     response = client.post(
-        "/items/",
+        "/api/v1/items/",
         json={"title": "Bad Type", "item_type": "notARealType"},
     )
     assert response.status_code == 422
@@ -114,19 +114,19 @@ def test_create_item_invalid_type(client: TestClient):
 
 def test_update_item_type(client: TestClient, sample_item_payload):
     """Updating item_type to another valid enum value should work."""
-    created = client.post("/items/", json=sample_item_payload).json()
+    created = client.post("/api/v1/items/", json=sample_item_payload).json()
     item_id = created["id"]
 
-    response = client.put(f"/items/{item_id}", json={"item_type": "book"})
+    response = client.put(f"/api/v1/items/{item_id}", json={"item_type": "book"})
     assert response.status_code == 200
     assert response.json()["item_type"] == "book"
 
 
 def test_arxiv_id_persisted(client: TestClient, sample_item_payload):
     """arxiv_id should be saved and returned as a top-level field."""
-    created = client.post("/items/", json=sample_item_payload).json()
+    created = client.post("/api/v1/items/", json=sample_item_payload).json()
     assert created["arxiv_id"] == sample_item_payload["arxiv_id"]
 
     item_id = created["id"]
-    response = client.get(f"/items/{item_id}")
+    response = client.get(f"/api/v1/items/{item_id}")
     assert response.json()["arxiv_id"] == sample_item_payload["arxiv_id"]

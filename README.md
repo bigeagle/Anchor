@@ -54,8 +54,8 @@ Start the backend server:
 uv run uvicorn anchor_server.main:app --reload
 ```
 
-The API will be available at `http://127.0.0.1:8000`. Interactive API docs are at
-`/docs`.
+The API will be available at `http://127.0.0.1:23119/api/v1`. Interactive API
+docs are at `/docs`.
 
 Run the test suite:
 
