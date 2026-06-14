@@ -74,6 +74,8 @@ In scope:
   - `POST /connector/saveAttachment`
   - `POST /connector/saveStandaloneAttachment`
   - `POST /connector/saveSingleFile`
+  - `POST /connector/hasAttachmentResolvers`
+  - `POST /connector/delaySync`
 - Import service that maps Zotero translator payloads to Anchor items and
   attachments. Duplicate detection is deferred.
 - Connector sessions that persist across the multi-request save sequence

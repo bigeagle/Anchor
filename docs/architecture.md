@@ -100,6 +100,8 @@ namespace, because the extension expects the local Zotero server contract.
 
 `ConnectorSession` tracks pending attachments so `/connector/sessionProgress`
 can report `done: true` only after every expected attachment has been uploaded.
+`hasAttachmentResolvers` returns `false` and `delaySync` is a no-op so the
+extension's progress window closes cleanly.
 
 ### Phase 2.2 — Zotero Connector: translator support
 

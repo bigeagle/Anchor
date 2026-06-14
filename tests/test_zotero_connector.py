@@ -248,3 +248,20 @@ def test_save_standalone_attachment_creates_parent(client: TestClient, db_sessio
     attachment = db_session.query(Attachment).first()
     assert attachment is not None
     assert attachment.item_id == item.id
+
+
+def test_has_attachment_resolvers_returns_false(client: TestClient):
+    """POST /connector/hasAttachmentResolvers should return false."""
+    response = client.post(
+        "/connector/hasAttachmentResolvers",
+        json={"sessionID": "test", "itemID": "item1"},
+    )
+    assert response.status_code == 200
+    assert response.json() is False
+
+
+def test_delay_sync_is_noop(client: TestClient):
+    """POST /connector/delaySync should return an empty object."""
+    response = client.post("/connector/delaySync", json={})
+    assert response.status_code == 200
+    assert response.json() == {}

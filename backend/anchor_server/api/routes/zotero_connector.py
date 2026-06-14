@@ -145,3 +145,15 @@ def save_single_file(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _connector_response(result)
+
+
+@router.post("/connector/hasAttachmentResolvers")
+def has_attachment_resolvers() -> Response:
+    """Report that Anchor has no attachment resolvers (e.g. OA PDF lookup)."""
+    return _connector_response(False)
+
+
+@router.post("/connector/delaySync")
+def delay_sync() -> Response:
+    """No-op endpoint for the connector's sync delay request."""
+    return _connector_response({})

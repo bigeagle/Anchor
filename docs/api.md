@@ -73,6 +73,8 @@ POST /connector/saveSnapshot
 POST /connector/saveAttachment
 POST /connector/saveStandaloneAttachment
 POST /connector/saveSingleFile
+POST /connector/hasAttachmentResolvers
+POST /connector/delaySync
 ```
 
 All requests and responses are JSON except `saveAttachment` and

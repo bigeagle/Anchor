@@ -48,14 +48,17 @@ Run database migrations:
 uv run alembic upgrade head
 ```
 
-Start the backend server:
+Start the backend server for development (uses `.env.dev` to keep data separate
+from production):
 
 ```bash
-uv run uvicorn anchor_server.main:app --reload
+uv run --env-file .env.dev uvicorn anchor_server.main:app --reload
 ```
 
 The API will be available at `http://127.0.0.1:23119/api/v1`. Interactive API
 docs are at `/docs`.
+
+To start with the production `.env` instead, omit `--env-file .env.dev`.
 
 Run the test suite:
 
