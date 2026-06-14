@@ -44,7 +44,10 @@ def temp_data_dir(tmp_path, monkeypatch):
     """Use a temporary directory for file attachments during tests."""
     data_dir = (tmp_path / "data").resolve()
     data_dir.mkdir()
+    attachments_dir = (tmp_path / "attachments").resolve()
+    attachments_dir.mkdir()
     monkeypatch.setattr(settings, "data_dir", data_dir)
+    monkeypatch.setattr(settings, "attachments_dir", attachments_dir)
     return data_dir
 
 

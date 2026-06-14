@@ -95,3 +95,25 @@ def test_upload_to_unknown_item(client: TestClient):
         files={"file": ("orphan.txt", BytesIO(b"x"), "text/plain")},
     )
     assert response.status_code == 404
+
+
+def test_upload_attachment_with_subdirs(client: TestClient, item_id):
+    """Filenames containing subdirectories should be stored hierarchically."""
+    response = client.post(
+        f"/items/{item_id}/attachments",
+        files={
+            "file": (
+                "papers/2024/deep_learning.pdf",
+                BytesIO(b"pdf"),
+                "application/pdf",
+            )
+        },
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["filename"] == "papers/2024/deep_learning.pdf"
+
+    attachment_id = data["id"]
+    response = client.get(f"/attachments/{attachment_id}")
+    assert response.status_code == 200
+    assert response.content == b"pdf"

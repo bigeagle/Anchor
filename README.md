@@ -77,7 +77,8 @@ present. All environment variables are prefixed with `ANCHOR_`:
 | Variable | Default | Description |
 |---|---|---|
 | `ANCHOR_DATABASE_URL` | `sqlite:///./anchor.db` | SQLite database URL |
-| `ANCHOR_DATA_DIR` | `./data` | Root directory for runtime data; attachments live in `<DATA_DIR>/attachments` |
+| `ANCHOR_DATA_DIR` | `./data` | Root directory for runtime data |
+| `ANCHOR_ATTACHMENTS_DIR` | `./data/attachments` | Directory for attachment files (can be moved outside `DATA_DIR`) |
 | `ANCHOR_HOST` | `127.0.0.1` | Server bind host |
 | `ANCHOR_PORT` | `23119` | Server bind port (same default as Zotero local server) |
 | `ANCHOR_LOG_LEVEL` | `info` | Uvicorn log level |
