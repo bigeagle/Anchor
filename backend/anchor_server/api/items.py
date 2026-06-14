@@ -74,6 +74,7 @@ def delete_item(item_id: uuid.UUID, db: Session = Depends(get_db)) -> None:
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    storage.delete_item_attachments(item_id)
+    for attachment in item.attachments:
+        storage.delete_attachment(attachment.storage_path)
     db.delete(item)
     db.commit()

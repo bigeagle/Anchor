@@ -10,21 +10,26 @@ from fastapi.testclient import TestClient
 @pytest.fixture
 def item_id(client: TestClient):
     """Create an item and return its id."""
-    payload = {"title": "Paper With Attachments", "item_type": "journalArticle"}
+    payload = {
+        "title": "Paper With Attachments",
+        "item_type": "journalArticle",
+        "year": 2024,
+        "authors": [{"firstName": "Alice", "lastName": "Smith"}],
+    }
     response = client.post("/items/", json=payload)
     assert response.status_code == 201
     return response.json()["id"]
 
 
 def test_upload_attachment(client: TestClient, item_id):
-    """POST /items/{id}/attachments should store the file."""
+    """POST /items/{id}/attachments should store and rename the file."""
     response = client.post(
         f"/items/{item_id}/attachments",
         files={"file": ("hello.txt", BytesIO(b"hello world"), "text/plain")},
     )
     assert response.status_code == 201
     data = response.json()
-    assert data["filename"] == "hello.txt"
+    assert data["filename"] == "2024_smith_paper_with_attachments.txt"
     assert data["content_type"] == "text/plain"
     assert data["size"] == 11
     assert data["item_id"] == item_id
@@ -41,7 +46,7 @@ def test_list_attachments(client: TestClient, item_id):
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1
-    assert data[0]["filename"] == "a.txt"
+    assert data[0]["filename"] == "2024_smith_paper_with_attachments.txt"
 
 
 def test_download_attachment(client: TestClient, item_id):
@@ -55,7 +60,9 @@ def test_download_attachment(client: TestClient, item_id):
     response = client.get(f"/attachments/{attachment_id}")
     assert response.status_code == 200
     assert response.content == b"pdf data"
-    assert response.headers["content-disposition"].endswith('filename="report.pdf"')
+    assert response.headers["content-disposition"].endswith(
+        'filename="2024_smith_paper_with_attachments.pdf"'
+    )
 
 
 def test_delete_attachment(client: TestClient, item_id):
@@ -97,23 +104,31 @@ def test_upload_to_unknown_item(client: TestClient):
     assert response.status_code == 404
 
 
-def test_upload_attachment_with_subdirs(client: TestClient, item_id):
-    """Filenames containing subdirectories should be stored hierarchically."""
-    response = client.post(
+def test_pdf_and_others_separated(client: TestClient, item_id):
+    """PDFs and non-PDFs should be stored in separate directories."""
+    pdf = client.post(
         f"/items/{item_id}/attachments",
-        files={
-            "file": (
-                "papers/2024/deep_learning.pdf",
-                BytesIO(b"pdf"),
-                "application/pdf",
-            )
-        },
-    )
-    assert response.status_code == 201
-    data = response.json()
-    assert data["filename"] == "papers/2024/deep_learning.pdf"
+        files={"file": ("report.pdf", BytesIO(b"pdf"), "application/pdf")},
+    ).json()
+    other = client.post(
+        f"/items/{item_id}/attachments",
+        files={"file": ("notes.txt", BytesIO(b"txt"), "text/plain")},
+    ).json()
 
-    attachment_id = data["id"]
-    response = client.get(f"/attachments/{attachment_id}")
-    assert response.status_code == 200
-    assert response.content == b"pdf"
+    assert pdf["storage_path"].startswith("pdfs/")
+    assert other["storage_path"].startswith("others/")
+
+
+def test_duplicate_attachment_name_protected(client: TestClient, item_id):
+    """Uploading the same conceptual attachment twice should append a counter."""
+    first = client.post(
+        f"/items/{item_id}/attachments",
+        files={"file": ("same.pdf", BytesIO(b"first"), "application/pdf")},
+    ).json()
+    second = client.post(
+        f"/items/{item_id}/attachments",
+        files={"file": ("same.pdf", BytesIO(b"second"), "application/pdf")},
+    ).json()
+
+    assert first["filename"] == "2024_smith_paper_with_attachments.pdf"
+    assert second["filename"] == "2024_smith_paper_with_attachments_1.pdf"

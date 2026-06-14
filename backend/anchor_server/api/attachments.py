@@ -1,6 +1,7 @@
 """Attachment endpoints."""
 
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
@@ -40,17 +41,20 @@ def upload_attachment(
     db: Session = Depends(get_db),
 ) -> Attachment:
     """Upload a file attachment for an item."""
-    _get_item_or_404(item_id, db)
+    item = _get_item_or_404(item_id, db)
 
     if file.filename is None:
         raise HTTPException(status_code=400, detail="Missing filename")
 
     data = file.file.read()
-    relative_path = storage.save_attachment(item_id, file.filename, data)
+    relative_path = storage.save_attachment(
+        item, file.filename, file.content_type, data
+    )
+    rendered_name = Path(relative_path).name
 
     attachment = Attachment(
         item_id=item_id,
-        filename=file.filename,
+        filename=rendered_name,
         content_type=file.content_type,
         size=len(data),
         storage_path=relative_path,

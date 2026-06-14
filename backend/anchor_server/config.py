@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./anchor.db"
     data_dir: Path = Path("./data")
     attachments_dir: Path = Path("./data/attachments")
+    attachment_name_template: str = (
+        "{{ year }}_{{ authors_last_names }}_{{ title_slug }}"
+    )
     host: str = "127.0.0.1"
     port: int = 23119  # Same default port as the Zotero local HTTP server
     log_level: str = "info"

@@ -79,7 +79,16 @@ present. All environment variables are prefixed with `ANCHOR_`:
 | `ANCHOR_DATABASE_URL` | `sqlite:///./anchor.db` | SQLite database URL |
 | `ANCHOR_DATA_DIR` | `./data` | Root directory for runtime data |
 | `ANCHOR_ATTACHMENTS_DIR` | `./data/attachments` | Directory for attachment files (can be moved outside `DATA_DIR`) |
+| `ANCHOR_ATTACHMENT_NAME_TEMPLATE` | `{{ year }}_{{ authors_last_names }}_{{ title_slug }}` | Jinja template for attachment filenames (extension is preserved) |
 | `ANCHOR_HOST` | `127.0.0.1` | Server bind host |
+
+Attachment files are organized under `<ANCHOR_ATTACHMENTS_DIR>/pdfs/` or
+`<ANCHOR_ATTACHMENTS_DIR>/others/` based on content type/extension. Filenames are
+generated from the configured Jinja template and made filesystem-safe. Duplicate
+names are resolved by appending `_1`, `_2`, etc.
+
+Available template variables: `year`, `title`, `title_slug`, `authors`,
+`authors_last_names`, `authors_short`, `item_type`, `arxiv_id`, `publication`.
 | `ANCHOR_PORT` | `23119` | Server bind port (same default as Zotero local server) |
 | `ANCHOR_LOG_LEVEL` | `info` | Uvicorn log level |
 

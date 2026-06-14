@@ -1,51 +1,103 @@
 """Local file storage for attachments."""
 
-import shutil
-import uuid
+import re
+import unicodedata
 from pathlib import Path
 
+from jinja2 import BaseLoader, Environment
+
 from anchor_server.config import settings
+from anchor_server.models import Item
 
 
-def _ensure_dir(path: Path) -> None:
-    """Create the directory if it does not exist."""
-    path.mkdir(parents=True, exist_ok=True)
+PDF_CONTENT_TYPE = "application/pdf"
 
 
-def _attachment_dir(item_id: uuid.UUID) -> Path:
-    """Return the storage directory for a given item."""
-    directory = settings.attachments_dir / str(item_id)
-    _ensure_dir(directory)
-    return directory
+def _slugify(value: str, max_length: int = 80) -> str:
+    """Convert a string to a safe, lowercase, underscore-separated form."""
+    value = (
+        unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    )
+    value = re.sub(r"[^\w\s-]", "", value).strip().lower()
+    value = re.sub(r"[-\s]+", "_", value)
+    return value[:max_length].strip("_")
 
 
-def _sanitize_subdirs(relative: Path) -> list[str]:
-    """Return safe directory parts, dropping traversal attempts."""
-    return [part for part in relative.parts if part not in ("", ".", "..")]
+def _last_name(author: dict) -> str:
+    """Extract a last name from an author dict, with sensible fallbacks."""
+    if last_name := author.get("lastName"):
+        return last_name
+    if name := author.get("name", "").strip():
+        return name.split()[-1]
+    return "unknown"
 
 
-def save_attachment(item_id: uuid.UUID, filename: str, data: bytes) -> str:
+def _render_name(item: Item, filename: str) -> str:
+    """Render the configured Jinja template into a safe filename base."""
+    suffix = Path(filename).suffix.lower()
+    authors = item.authors or []
+    last_names = [_last_name(a) for a in authors]
+    authors_last_names = "_".join(last_names) or "unknown"
+    authors_short = f"{last_names[0]}_et_al" if last_names else "unknown"
+
+    env = Environment(loader=BaseLoader())
+    template = env.from_string(settings.attachment_name_template)
+    base = template.render(
+        year=item.year or "unknown",
+        title=item.title or "untitled",
+        title_slug=_slugify(item.title or "untitled"),
+        authors=authors,
+        authors_last_names=authors_last_names,
+        authors_short=authors_short,
+        item_type=item.item_type,
+        arxiv_id=item.arxiv_id or "",
+        publication=item.publication or "",
+    )
+    base = _slugify(base, max_length=200)
+    return f"{base}{suffix}"
+
+
+def _attachment_kind(content_type: str | None, filename: str) -> str:
+    """Classify an attachment as PDF or other based on content type/extension."""
+    if content_type == PDF_CONTENT_TYPE or filename.lower().endswith(".pdf"):
+        return "pdfs"
+    return "others"
+
+
+def _unique_path(directory: Path, name: str) -> Path:
+    """Return a non-conflicting path inside ``directory`` for ``name``."""
+    candidate = directory / name
+    if not candidate.exists():
+        return candidate
+
+    stem = candidate.stem
+    suffix = candidate.suffix
+    counter = 1
+    while True:
+        candidate = directory / f"{stem}_{counter}{suffix}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
+def save_attachment(
+    item: Item,
+    filename: str,
+    content_type: str | None,
+    data: bytes,
+) -> str:
     """Save attachment bytes and return the relative storage path.
 
-    The supplied ``filename`` may contain subdirectories (e.g.
-    ``papers/2024/paper.pdf``) which are recreated under the item's storage
-    directory for hierarchical organization.
+    Files are organized under ``<attachments_dir>/pdfs/`` or
+    ``<attachments_dir>/others/`` and named according to the configured Jinja
+    template. Duplicate filenames are resolved by appending ``_1``, ``_2``, etc.
     """
-    base_dir = _attachment_dir(item_id)
-    relative = Path(filename)
+    kind = _attachment_kind(content_type, filename)
+    directory = settings.attachments_dir / kind
+    directory.mkdir(parents=True, exist_ok=True)
 
-    basename = relative.name
-    if not basename or basename in (".", ".."):
-        raise ValueError("Invalid filename")
-
-    subdirs = _sanitize_subdirs(relative.parent)
-    target_dir = base_dir.joinpath(*subdirs)
-    _ensure_dir(target_dir)
-
-    suffix = Path(basename).suffix
-    stem = Path(basename).stem
-    storage_name = f"{stem}_{uuid.uuid4().hex}{suffix}"
-    storage_path = target_dir / storage_name
+    name = _render_name(item, filename)
+    storage_path = _unique_path(directory, name)
     storage_path.write_bytes(data)
     return str(storage_path.relative_to(settings.attachments_dir))
 
@@ -63,19 +115,12 @@ def delete_attachment(relative_path: str) -> None:
         return
 
     full_path.unlink()
-    # Walk upward removing empty directories, stopping at the item root.
+    # Walk upward removing empty directories, stopping at the kind root.
     parent = full_path.parent
-    item_root = settings.attachments_dir
-    while parent != item_root and parent.is_relative_to(item_root):
+    kind_root = settings.attachments_dir
+    while parent != kind_root and parent.is_relative_to(kind_root):
         try:
             parent.rmdir()
         except OSError:
             break
         parent = parent.parent
-
-
-def delete_item_attachments(item_id: uuid.UUID) -> None:
-    """Delete all attachment files belonging to an item."""
-    directory = settings.attachments_dir / str(item_id)
-    if directory.exists():
-        shutil.rmtree(directory)

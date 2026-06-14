@@ -19,6 +19,7 @@ class AttachmentOut(BaseModel):
     filename: str
     content_type: str | None
     size: int
+    storage_path: str
     date_added: datetime
 
 
