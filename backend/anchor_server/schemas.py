@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from anchor_server.enums import ItemType
 
@@ -21,6 +21,12 @@ class AttachmentOut(BaseModel):
     size: int
     storage_path: str
     date_added: datetime
+
+    @computed_field
+    @property
+    def href(self) -> str:
+        """Relative download URL; prepend the API base URL (e.g. /api/v1)."""
+        return f"/attachments/{self.id}"
 
 
 class ItemBase(BaseModel):
