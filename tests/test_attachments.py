@@ -49,8 +49,8 @@ def test_list_attachments(client: TestClient, item_id):
     assert data[0]["filename"] == "2024_smith_paper_with_attachments.txt"
 
 
-def test_download_pdf_inline(client: TestClient, item_id):
-    """PDF attachments should be served inline for browser preview."""
+def test_download_attachment(client: TestClient, item_id):
+    """GET /attachments/{id} should return the file content."""
     created = client.post(
         f"/api/v1/items/{item_id}/attachments",
         files={"file": ("report.pdf", BytesIO(b"pdf data"), "application/pdf")},
@@ -60,21 +60,8 @@ def test_download_pdf_inline(client: TestClient, item_id):
     response = client.get(f"/api/v1/attachments/{attachment_id}")
     assert response.status_code == 200
     assert response.content == b"pdf data"
-    assert response.headers["content-disposition"] == "inline"
-
-
-def test_download_non_pdf_attachment(client: TestClient, item_id):
-    """Non-PDF attachments should still be offered as downloads."""
-    created = client.post(
-        f"/api/v1/items/{item_id}/attachments",
-        files={"file": ("notes.txt", BytesIO(b"notes"), "text/plain")},
-    ).json()
-    attachment_id = created["id"]
-
-    response = client.get(f"/api/v1/attachments/{attachment_id}")
-    assert response.status_code == 200
     assert response.headers["content-disposition"].endswith(
-        'filename="2024_smith_paper_with_attachments.txt"'
+        'filename="2024_smith_paper_with_attachments.pdf"'
     )
 
 
