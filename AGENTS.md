@@ -2,3 +2,5 @@
 - 使用 pnpm 管理 ts 项目的依赖和构建
 - 使用 vite 作为 ts 项目的构建工具
 - 用 prek (uv add) 作为 git-pre-commit 钩子，确保提交前运行 lint
+- 短任务不得自动 commit，必须主动征求用户同意
+- 自主运行的长期任务需要在合适的位置 commit，方便未来 debug
