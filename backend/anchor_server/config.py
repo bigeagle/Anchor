@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./anchor.db"
     data_dir: Path = Path("./data")
     host: str = "127.0.0.1"
-    port: int = 8000
+    port: int = 23119  # Same default port as the Zotero local HTTP server
     log_level: str = "info"
 
     @field_validator("data_dir", mode="after")
