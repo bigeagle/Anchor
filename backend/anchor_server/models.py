@@ -40,6 +40,7 @@ class Item(Base):
     pages: Mapped[str | None] = mapped_column(String(128), nullable=True)
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     doi: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    arxiv_id: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True)
     isbn: Mapped[str | None] = mapped_column(String(64), nullable=True)
     url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     language: Mapped[str | None] = mapped_column(String(32), nullable=True)

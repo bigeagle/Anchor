@@ -35,6 +35,7 @@ class ItemBase(BaseModel):
     pages: str | None = None
     year: int | None = None
     doi: str | None = None
+    arxiv_id: str | None = None
     isbn: str | None = None
     url: str | None = None
     language: str | None = None
@@ -58,6 +59,7 @@ class ItemUpdate(BaseModel):
     pages: str | None = None
     year: int | None = None
     doi: str | None = None
+    arxiv_id: str | None = None
     isbn: str | None = None
     url: str | None = None
     language: str | None = None

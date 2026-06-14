@@ -15,6 +15,7 @@ def sample_item_payload():
         "authors": [{"firstName": "Alice", "lastName": "Smith"}],
         "year": 2024,
         "doi": "10.1234/example",
+        "arxiv_id": "arXiv:2401.00001",
     }
 
 
@@ -119,3 +120,13 @@ def test_update_item_type(client: TestClient, sample_item_payload):
     response = client.put(f"/items/{item_id}", json={"item_type": "book"})
     assert response.status_code == 200
     assert response.json()["item_type"] == "book"
+
+
+def test_arxiv_id_persisted(client: TestClient, sample_item_payload):
+    """arxiv_id should be saved and returned as a top-level field."""
+    created = client.post("/items/", json=sample_item_payload).json()
+    assert created["arxiv_id"] == sample_item_payload["arxiv_id"]
+
+    item_id = created["id"]
+    response = client.get(f"/items/{item_id}")
+    assert response.json()["arxiv_id"] == sample_item_payload["arxiv_id"]
