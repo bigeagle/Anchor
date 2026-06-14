@@ -46,8 +46,11 @@ def temp_data_dir(tmp_path, monkeypatch):
     data_dir.mkdir()
     attachments_dir = (tmp_path / "attachments").resolve()
     attachments_dir.mkdir()
+    translators_dir = (tmp_path / "translators").resolve()
+    translators_dir.mkdir()
     monkeypatch.setattr(settings, "data_dir", data_dir)
     monkeypatch.setattr(settings, "attachments_dir", attachments_dir)
+    monkeypatch.setattr(settings, "translators_dir", translators_dir)
     # Ensure tests use the default naming template regardless of local .env files.
     monkeypatch.setattr(
         settings,
@@ -55,6 +58,12 @@ def temp_data_dir(tmp_path, monkeypatch):
         "{{ year }}_{{ authors_last_names }}_{{ title_slug }}",
     )
     return data_dir
+
+
+@pytest.fixture
+def translators_dir(temp_data_dir):
+    """Return the temporary translators directory used during tests."""
+    return settings.translators_dir
 
 
 @pytest.fixture

@@ -26,7 +26,12 @@ class Settings(BaseSettings):
     port: int = 23119  # Same default port as the Zotero local HTTP server
     log_level: str = "info"
 
-    @field_validator("data_dir", "attachments_dir", mode="after")
+    # Phase 2.2 — translator support
+    translators_dir: Path = Path("./data/translators")
+    zotero_repo_url: str = "https://repo.zotero.org/repo/"
+    http_proxy: str | None = None
+
+    @field_validator("data_dir", "attachments_dir", "translators_dir", mode="after")
     @classmethod
     def _resolve_path(cls, value: Path) -> Path:
         """Resolve relative paths against the current working directory."""

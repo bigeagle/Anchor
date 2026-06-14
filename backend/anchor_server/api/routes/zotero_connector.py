@@ -20,7 +20,7 @@ from anchor_server.schemas.zotero import (
     ConnectorStandaloneAttachmentMetadata,
     ConnectorStandaloneAttachmentResponse,
 )
-from anchor_server.services import zotero_service
+from anchor_server.services import translator_service, zotero_service
 
 router = APIRouter(tags=["zotero-connector"])
 
@@ -47,6 +47,10 @@ def ping(request: Request) -> Response:
         "supportsAttachmentUpload": True,
         "supportsTagsAutocomplete": False,
         "canUserAddNote": False,
+        "translatorsHash": translator_service.get_translators_hash(),
+        "sortedTranslatorHash": translator_service.get_translators_hash(
+            sorted_ids=True
+        ),
     }
     return _connector_response(ConnectorPingResponse(prefs=prefs).model_dump())
 
@@ -157,3 +161,38 @@ def has_attachment_resolvers() -> Response:
 def delay_sync() -> Response:
     """No-op endpoint for the connector's sync delay request."""
     return _connector_response({})
+
+
+@router.post("/connector/getTranslators")
+def get_translators() -> Response:
+    """Return metadata for all cached translators."""
+    return _connector_response(translator_service.list_translators())
+
+
+@router.post("/connector/getTranslatorCode")
+def get_translator_code(payload: dict[str, Any]) -> Response:
+    """Return JavaScript source for a translator by ID."""
+    translator_id = payload.get("translatorID")
+    if not translator_id:
+        raise HTTPException(status_code=400, detail="translatorID is required")
+    try:
+        code = translator_service.get_translator_code(translator_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(
+        content=code,
+        media_type="application/javascript",
+        headers={"X-Zotero-Version": CONNECTOR_SERVER_VERSION},
+    )
+
+
+@router.get("/connector/proxies")
+def get_proxies() -> Response:
+    """Return proxy configuration hints."""
+    return _connector_response(translator_service.get_proxy_list())
+
+
+@router.get("/connector/getClientHostnames")
+def get_client_hostnames() -> Response:
+    """Return local hostnames the connector may see."""
+    return _connector_response(translator_service.get_client_hostnames())
