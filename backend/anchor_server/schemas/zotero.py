@@ -43,6 +43,7 @@ class ConnectorItem(BaseModel):
     DOI: str | None = None
     ISBN: str | None = None
     arxivID: str | None = None
+    archiveID: str | None = None
     abstractNote: str | None = None
     publicationTitle: str | None = None
     volume: str | None = None

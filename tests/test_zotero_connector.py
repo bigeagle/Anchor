@@ -87,6 +87,30 @@ def test_save_items_creates_item_and_session(
     assert session.pending_attachments == ["att1"]
 
 
+def test_save_items_extracts_arxiv_id_from_archive_id(client: TestClient, db_session):
+    """Zotero arXiv translator uses archiveID; we should map it to arxiv_id."""
+    payload = {
+        "sessionID": "arxiv-test",
+        "uri": "https://arxiv.org/abs/2401.00001",
+        "items": [
+            {
+                "id": "item1",
+                "itemType": "preprint",
+                "title": "An arXiv Preprint",
+                "url": "https://arxiv.org/abs/2401.00001",
+                "archiveID": "arXiv:2401.00001",
+                "DOI": "10.48550/arXiv.2401.00001",
+            }
+        ],
+    }
+    response = client.post("/connector/saveItems", json=payload)
+    assert response.status_code == 200
+
+    item = db_session.query(Item).filter(Item.title == "An arXiv Preprint").first()
+    assert item is not None
+    assert item.arxiv_id == "arXiv:2401.00001"
+
+
 def test_save_attachment_links_file_to_item(
     client: TestClient, article_payload, db_session
 ):

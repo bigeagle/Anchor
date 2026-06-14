@@ -36,6 +36,23 @@ def _parse_year(date_or_year: str | int | None, year: int | None) -> int | None:
     return int(match.group(0)) if match else None
 
 
+def _extract_arxiv_id(payload: ConnectorItem) -> str | None:
+    """Return a normalised arXiv ID from the various Zotero field names.
+
+    Zotero arXiv translators set ``archiveID`` (e.g. ``arXiv:2401.00001``);
+    some other translators may use ``arxivID``. The ``arXiv:`` prefix is
+    preserved for display consistency.
+    """
+    raw = payload.arxivID or payload.archiveID
+    if not raw:
+        return None
+    cleaned = raw.strip()
+    # Normalise casing of the prefix, but keep it.
+    if cleaned.lower().startswith("arxiv:"):
+        cleaned = "arXiv:" + cleaned.split(":", 1)[1]
+    return cleaned or None
+
+
 def _extract_authors(creators: list[dict[str, Any]]) -> list[dict[str, str]]:
     """Convert Zotero creators into Anchor's author shape."""
     authors = []
@@ -66,7 +83,7 @@ def map_connector_item_to_item(payload: ConnectorItem) -> Item:
         year=_parse_year(payload.date, payload.year),
         doi=payload.DOI,
         isbn=payload.ISBN,
-        arxiv_id=payload.arxivID,
+        arxiv_id=_extract_arxiv_id(payload),
         url=payload.url,
         language=payload.language,
         extra=_collect_extra(payload),
