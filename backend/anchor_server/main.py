@@ -2,7 +2,7 @@
 
 from fastapi import FastAPI
 
-from anchor_server.api import attachments, items
+from anchor_server.api.routes import attachments, items, zotero_connector
 
 app = FastAPI(
     title="Anchor",
@@ -14,6 +14,7 @@ API_PREFIX = "/api/v1"
 
 app.include_router(items.router, prefix=API_PREFIX)
 app.include_router(attachments.router, prefix=API_PREFIX)
+app.include_router(zotero_connector.router)
 
 
 @app.get(f"{API_PREFIX}/healthz", tags=["health"])

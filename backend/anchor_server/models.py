@@ -79,3 +79,32 @@ class Attachment(Base):
     date_added: Mapped[datetime] = mapped_column(default=utc_now)
 
     item: Mapped["Item"] = relationship(back_populates="attachments")
+
+
+class ConnectorSession(Base):
+    """Temporary session state for a Zotero Connector save flow.
+
+    Maps connector-side IDs (sessionID, itemID, attachmentID strings) to Anchor
+    UUIDs across the multi-request save sequence.
+    """
+
+    __tablename__ = "connector_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    item_map: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    attachment_map: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    pending_attachments: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        default=utc_now,
+        onupdate=utc_now,
+    )

@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend"))
 
 from anchor_server.database import Base  # noqa: E402
 from anchor_server.config import settings  # noqa: E402
-from anchor_server.models import Item, Attachment  # noqa: E402, F401
+from anchor_server.models import Attachment, ConnectorSession, Item  # noqa: E402, F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
