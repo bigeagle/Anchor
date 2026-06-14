@@ -32,6 +32,51 @@ See `docs/product.md` for the full phased plan.
 - TypeScript dependencies and builds: pnpm
 - Pre-commit hooks: prek
 
+## Development
+
+Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/).
+
+Install dependencies and activate the virtual environment:
+
+```bash
+uv sync
+```
+
+Run database migrations:
+
+```bash
+uv run alembic upgrade head
+```
+
+Start the backend server:
+
+```bash
+uv run uvicorn anchor_server.main:app --reload
+```
+
+The API will be available at `http://127.0.0.1:8000`. Interactive API docs are at
+`/docs`.
+
+Run the test suite:
+
+```bash
+uv run pytest -v
+```
+
+Run linting and formatting checks (also enforced by pre-commit hooks):
+
+```bash
+uv run prek run --all-files
+```
+
+## Configuration
+
+Anchor uses sensible defaults and loads environment variables from `.env` when
+present. Key settings:
+
+- `DATABASE_URL` — SQLite database URL (default: `sqlite:///./anchor.db`)
+- `DATA_DIR` — root directory for attachments and runtime data (default: `./data`)
+
 ## Design Docs
 
 - [Product Scope](docs/product.md)
