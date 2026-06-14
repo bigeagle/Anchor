@@ -48,6 +48,12 @@ def temp_data_dir(tmp_path, monkeypatch):
     attachments_dir.mkdir()
     monkeypatch.setattr(settings, "data_dir", data_dir)
     monkeypatch.setattr(settings, "attachments_dir", attachments_dir)
+    # Ensure tests use the default naming template regardless of local .env files.
+    monkeypatch.setattr(
+        settings,
+        "attachment_name_template",
+        "{{ year }}_{{ authors_last_names }}_{{ title_slug }}",
+    )
     return data_dir
 
 

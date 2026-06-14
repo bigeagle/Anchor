@@ -132,3 +132,22 @@ def test_duplicate_attachment_name_protected(client: TestClient, item_id):
 
     assert first["filename"] == "2024_smith_paper_with_attachments.pdf"
     assert second["filename"] == "2024_smith_paper_with_attachments_1.pdf"
+
+
+def test_template_subdirectories_are_created(client: TestClient, item_id, monkeypatch):
+    """Template output containing path separators should create subdirectories."""
+    from anchor_server.config import settings
+
+    monkeypatch.setattr(
+        settings,
+        "attachment_name_template",
+        "{{ year }}/{{ authors_last_names }}/{{ title_slug }}",
+    )
+
+    response = client.post(
+        f"/items/{item_id}/attachments",
+        files={"file": ("report.pdf", BytesIO(b"pdf"), "application/pdf")},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["storage_path"].startswith("pdfs/2024/smith/paper_with_attachments.pdf")

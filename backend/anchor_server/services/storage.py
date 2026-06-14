@@ -53,7 +53,11 @@ def _render_name(item: Item, filename: str) -> str:
         arxiv_id=item.arxiv_id or "",
         publication=item.publication or "",
     )
-    base = _slugify(base, max_length=200)
+    # Preserve path separators from the template while making each part safe.
+    parts = [part for part in base.split("/") if part]
+    safe_parts = [_slugify(part, max_length=80) for part in parts]
+    safe_parts = [part for part in safe_parts if part]
+    base = "/".join(safe_parts)
     return f"{base}{suffix}"
 
 
@@ -65,16 +69,24 @@ def _attachment_kind(content_type: str | None, filename: str) -> str:
 
 
 def _unique_path(directory: Path, name: str) -> Path:
-    """Return a non-conflicting path inside ``directory`` for ``name``."""
-    candidate = directory / name
+    """Return a non-conflicting path inside ``directory`` for ``name``.
+
+    ``name`` may contain subdirectories; all required parent directories are
+    created automatically. Duplicate basenames get ``_1``, ``_2``, etc.
+    """
+    relative = Path(name)
+    target_dir = directory / relative.parent
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    candidate = target_dir / relative.name
     if not candidate.exists():
         return candidate
 
-    stem = candidate.stem
-    suffix = candidate.suffix
+    stem = Path(relative.name).stem
+    suffix = Path(relative.name).suffix
     counter = 1
     while True:
-        candidate = directory / f"{stem}_{counter}{suffix}"
+        candidate = target_dir / f"{stem}_{counter}{suffix}"
         if not candidate.exists():
             return candidate
         counter += 1
@@ -90,11 +102,12 @@ def save_attachment(
 
     Files are organized under ``<attachments_dir>/pdfs/`` or
     ``<attachments_dir>/others/`` and named according to the configured Jinja
-    template. Duplicate filenames are resolved by appending ``_1``, ``_2``, etc.
+    template. The rendered name may contain subdirectories, which are created
+    automatically. Duplicate filenames are resolved by appending ``_1``,
+    ``_2``, etc.
     """
     kind = _attachment_kind(content_type, filename)
     directory = settings.attachments_dir / kind
-    directory.mkdir(parents=True, exist_ok=True)
 
     name = _render_name(item, filename)
     storage_path = _unique_path(directory, name)
