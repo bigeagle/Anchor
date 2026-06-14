@@ -59,6 +59,7 @@ Thumbs.db
 tmp/
 /data/
 /data-dev/
+/backup/
 
 # Frontend (pnpm / Vite / Vue)
 node_modules/
