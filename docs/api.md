@@ -1,16 +1,15 @@
 # API Draft
 
-All endpoints are versioned under `/api/v1`. MVP is single-owner, but responses
-should still include ownership and revision metadata where useful.
+All public endpoints are versioned under `/api/v1`.
 
 ## Conventions
 
-- Authentication: `Authorization: Bearer <token>`.
-- Request and response bodies: JSON, except file upload/download endpoints.
-- IDs: stable UUID or ULID strings.
-- Deleted objects are excluded by default.
-- List endpoints should support pagination.
-- Error responses should use a stable structure:
+- Phase 1 has no authentication. Phase 2 adds `Authorization: Bearer <token>`.
+- Request and response bodies are JSON unless noted.
+- IDs are stable UUID strings.
+- List endpoints support pagination with `limit` and `offset` (`cursor` is added
+  later).
+- Error responses use a stable structure:
 
 ```json
 {
@@ -21,7 +20,9 @@ should still include ownership and revision metadata where useful.
 }
 ```
 
-## Items
+## Phase 1 — Items and Attachments
+
+### Items
 
 ```text
 GET    /api/v1/items
@@ -29,28 +30,16 @@ POST   /api/v1/items
 GET    /api/v1/items/{item_id}
 PATCH  /api/v1/items/{item_id}
 DELETE /api/v1/items/{item_id}
-POST   /api/v1/items/{item_id}/restore
 ```
 
-Useful filters for `GET /items`:
+`GET /api/v1/items` supports pagination only:
 
-- `q`
-- `type`
-- `tag`
-- `collection_id`
-- `creator`
-- `year`
-- `doi`
-- `url`
 - `limit`
-- `cursor`
+- `offset`
 
-## Creators
+Creators are embedded in item create/update payloads.
 
-Creators may be managed as part of item create/update payloads. Separate
-endpoints can be added later if editing workflows need them.
-
-## Attachments
+### Attachments
 
 ```text
 GET    /api/v1/items/{item_id}/attachments
@@ -61,21 +50,43 @@ DELETE /api/v1/attachments/{attachment_id}
 GET    /api/v1/attachments/{attachment_id}/file
 ```
 
-Upload should use multipart form data with a file field plus optional metadata.
+Upload uses multipart form data with a `file` field plus optional metadata.
 
-## Collections
+---
+
+## Phase 2 — Zotero Connector
+
+### Zotero Connector
 
 ```text
-GET    /api/v1/collections
-POST   /api/v1/collections
-GET    /api/v1/collections/{collection_id}
-PATCH  /api/v1/collections/{collection_id}
-DELETE /api/v1/collections/{collection_id}
-POST   /api/v1/collections/{collection_id}/items/{item_id}
-DELETE /api/v1/collections/{collection_id}/items/{item_id}
+GET  /api/v1/zotero-connector/status
+POST /api/v1/zotero-connector/save
+POST /api/v1/zotero-connector/saveSnapshot
 ```
 
-## Tags
+These accept Zotero Connector payloads and create items + attachments.
+
+---
+
+## Phase 3 — Frontend Support
+
+No new backend endpoints are required for the first frontend. The UI consumes
+the Phase 1 and Phase 2 public APIs above. Optional convenience endpoints can
+be added if the UI needs them.
+
+---
+
+## Phase 4 — Product Polish
+
+Public endpoints deferred until the core product is stable:
+
+### Search
+
+```text
+GET /api/v1/search?q=...
+```
+
+### Tags
 
 ```text
 GET    /api/v1/tags
@@ -83,9 +94,7 @@ POST   /api/v1/items/{item_id}/tags
 DELETE /api/v1/items/{item_id}/tags/{tag_id}
 ```
 
-Tags can be created implicitly when attached to an item.
-
-## Notes
+### Notes
 
 ```text
 GET    /api/v1/items/{item_id}/notes
@@ -94,23 +103,7 @@ PATCH  /api/v1/notes/{note_id}
 DELETE /api/v1/notes/{note_id}
 ```
 
-## Search
-
-```text
-GET /api/v1/search?q=...
-```
-
-Search results should return typed hits:
-
-```json
-{
-  "items": [],
-  "attachments": [],
-  "notes": []
-}
-```
-
-## Imports
+### Import
 
 ```text
 POST /api/v1/import/doi
@@ -119,59 +112,29 @@ POST /api/v1/import/bibtex
 POST /api/v1/import/ris
 ```
 
-Import responses should include created item IDs and duplicate candidates.
-
-## Zotero Connector Compatibility
-
-Zotero Connector support should live in a clearly separated route module:
-
-```text
-GET  /api/v1/zotero-connector/status
-POST /api/v1/zotero-connector/save
-```
-
-If real Zotero Connector compatibility requires unversioned or Zotero-shaped
-paths, implement those paths as thin adapters that call the same import service.
-
-## Agent-Oriented Batch APIs
-
-Agents should not need to make hundreds of small calls for common tasks:
+### Batch
 
 ```text
 POST /api/v1/batch/items/get
 POST /api/v1/batch/items/update
-POST /api/v1/batch/items/tag
-POST /api/v1/batch/items/collections
 ```
 
-Batch APIs should be conservative:
+### Trash / Restore
 
-- bounded maximum batch size
-- per-item success/error results
-- no hidden partial rollback unless explicitly documented
+```text
+GET    /api/v1/trash
+POST   /api/v1/items/{item_id}/restore
+```
 
-## Reserved Future Sync APIs
+---
 
-These routes can exist as stubs or be left unimplemented until the sync phase:
+## Reserved for the Future
+
+These are intentionally not implemented in the three phases above:
 
 ```text
 GET  /api/v1/sync/capabilities
 GET  /api/v1/sync/changes?since=...
 POST /api/v1/sync/push
 GET  /api/v1/sync/attachments/missing
-POST /api/v1/sync/attachments/{attachment_id}
 ```
-
-Do not expose sync routes as production-ready until conflict behavior, cursors,
-and retention rules are specified.
-
-## Users And Devices
-
-MVP can expose minimal introspection endpoints:
-
-```text
-GET /api/v1/me
-GET /api/v1/devices
-```
-
-Actual user administration can wait until multi-user hosting is in scope.

@@ -15,6 +15,15 @@ The first milestone is a single-machine, single-owner application:
 Anchor is designed so future multi-device sync and multi-user hosting can be
 added without rewriting the core data model.
 
+## Roadmap
+
+1. **Backend core** — CRUD for items plus file attachments.
+2. **Zotero Connector** — accept saves from Zotero Connector.
+3. **Frontend** — small Vue UI for browsing and editing the library.
+4. **Product polish** — tags, notes, imports, batch updates, trash, FTS search.
+
+See `docs/product.md` for the full phased plan.
+
 ## Stack
 
 - Backend: Python, FastAPI, Pydantic, pydantic-settings, SQLite
