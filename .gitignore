@@ -57,6 +57,7 @@ Thumbs.db
 *.db
 .anchor/
 tmp/
+/data/
 
 # Frontend (pnpm / Vite / Vue)
 node_modules/
