@@ -60,8 +60,34 @@ def test_download_attachment(client: TestClient, item_id):
     response = client.get(f"/api/v1/attachments/{attachment_id}")
     assert response.status_code == 200
     assert response.content == b"pdf data"
+    assert response.headers["content-disposition"] == "inline"
+
+
+def test_download_html_inline(client: TestClient, item_id):
+    """HTML attachments should be served inline for browser preview."""
+    created = client.post(
+        f"/api/v1/items/{item_id}/attachments",
+        files={"file": ("page.html", BytesIO(b"<html></html>"), "text/html")},
+    ).json()
+    attachment_id = created["id"]
+
+    response = client.get(f"/api/v1/attachments/{attachment_id}")
+    assert response.status_code == 200
+    assert response.headers["content-disposition"] == "inline"
+
+
+def test_download_binary_attachment(client: TestClient, item_id):
+    """Unknown binary types should still be offered as downloads."""
+    created = client.post(
+        f"/api/v1/items/{item_id}/attachments",
+        files={"file": ("data.bin", BytesIO(b"binary"), "application/octet-stream")},
+    ).json()
+    attachment_id = created["id"]
+
+    response = client.get(f"/api/v1/attachments/{attachment_id}")
+    assert response.status_code == 200
     assert response.headers["content-disposition"].endswith(
-        'filename="2024_smith_paper_with_attachments.pdf"'
+        'filename="2024_smith_paper_with_attachments.bin"'
     )
 
 

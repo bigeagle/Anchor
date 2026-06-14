@@ -14,6 +14,27 @@ from anchor_server.services import storage
 
 router = APIRouter(tags=["attachments"])
 
+# Content types that browsers can render inline.
+INLINE_PREFIXES = (
+    "text/",
+    "image/",
+    "audio/",
+    "video/",
+    "application/pdf",
+    "application/json",
+    "application/xml",
+    "application/javascript",
+    "application/xhtml+xml",
+)
+
+
+def _should_inline(content_type: str | None) -> bool:
+    """Return True if the browser can preview this content type natively."""
+    if not content_type:
+        return False
+    lowered = content_type.lower()
+    return lowered.startswith(INLINE_PREFIXES)
+
 
 def _get_item_or_404(item_id: uuid.UUID, db: Session) -> Item:
     """Fetch an item or raise 404."""
@@ -75,12 +96,17 @@ def download_attachment(
         raise HTTPException(status_code=404, detail="Attachment not found")
 
     data = storage.read_attachment(attachment.storage_path)
+    # Browsers can preview common types inline; otherwise force a download.
+    if _should_inline(attachment.content_type):
+        headers = {"Content-Disposition": "inline"}
+    else:
+        headers = {
+            "Content-Disposition": f'attachment; filename="{attachment.filename}"'
+        }
     return Response(
         content=data,
         media_type=attachment.content_type or "application/octet-stream",
-        headers={
-            "Content-Disposition": f'attachment; filename="{attachment.filename}"'
-        },
+        headers=headers,
     )
 
 
