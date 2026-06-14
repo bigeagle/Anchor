@@ -56,27 +56,76 @@ items, plus upload, replace, and download attachments.
 
 ---
 
-### Phase 2 — Zotero Connector integration
+### Phase 2.1 — Zotero Connector: basic save workflow
 
-**Goal:** Accept saves from Zotero Connector.
+**Goal:** Accept saves from the Zotero browser extension using the modern
+connector workflow: the extension creates items and uploads attachments directly
+as binary blobs.
 
 In scope:
 
-- Authentication: single owner user + API token.
-- Zotero Connector endpoints (`status`, `save`, `saveSnapshot`) for common web
-  capture flows.
-- Import service that turns connector payloads into items + attachments,
-  with duplicate detection by DOI or URL.
+- Connector namespace served from the same local HTTP server (`/connector/*`).
+- Endpoints required by the modern save workflow:
+  - `POST /connector/ping`
+  - `POST /connector/getSelectedCollection`
+  - `POST /connector/saveItems`
+  - `POST /connector/sessionProgress`
+  - `POST /connector/saveSnapshot`
+  - `POST /connector/saveAttachment`
+  - `POST /connector/saveStandaloneAttachment`
+  - `POST /connector/saveSingleFile`
+- Import service that maps Zotero translator payloads to Anchor items and
+  attachments. Duplicate detection is deferred.
+- Connector sessions that persist across the multi-request save sequence
+  (`saveItems` → `saveAttachment`/`saveSingleFile` → `sessionProgress`).
+- `sessionProgress` tracks pending attachments and only reports `done: true`
+  after every expected attachment has been uploaded.
+- `saveSnapshot` creates a `document` item when saving a PDF directly.
 
-Out of scope for Phase 2:
+Out of scope for Phase 2.1:
 
+- Authentication.
+- The legacy workflow where the server downloads attachments itself.
+- Translator listing/execution, proxy support, style import, word-processor
+  integration, and other advanced connector endpoints (see Phase 2.2).
 - Full two-way Zotero sync.
 - Zotero API compatibility layer.
 - Groups, annotations, and advanced Zotero data model features.
 - Multi-device sync.
 
 **Definition of done:**
-The Zotero Connector can save a webpage or PDF into Anchor.
+The Zotero Connector can save a webpage, an article with PDF, or a standalone
+PDF into Anchor, and the saved items and attachments appear through the Phase 1
+public API.
+
+---
+
+### Phase 2.2 — Zotero Connector: translator support
+
+**Goal:** Enable rich metadata extraction by serving translators to the
+extension, so pages matched by official Zotero translators are saved with full
+bibliographic metadata.
+
+In scope:
+
+- Bundle or sync the official Zotero translators repository.
+- `POST /connector/getTranslators` — return translator metadata.
+- `POST /connector/getTranslatorCode` — return translator JavaScript code.
+- `ping` returns `translatorsHash` / `sortedTranslatorHash` for incremental
+  updates.
+- Proxy support (`GET /connector/proxies`, `GET /connector/getClientHostnames`)
+  if needed by translators.
+
+Out of scope for Phase 2.2:
+
+- Authentication.
+- The legacy attachment-download workflow.
+- Word-processor integration, `/connector/import`, `/connector/installStyle`.
+- Full two-way Zotero sync.
+
+**Definition of done:**
+The Zotero Connector can save a journal article, news article, or book page
+matched by an official translator and populate Anchor with complete metadata.
 
 ---
 
@@ -89,7 +138,7 @@ In scope:
 
 - Library view: list items, search, pagination, create/edit/delete.
 - Item detail view: metadata, creators, attachments.
-- Settings view: data directory path and API token display.
+- Settings view: data directory path display.
 - The frontend uses the same public API as any other client.
 
 Out of scope for Phase 3:
@@ -111,6 +160,7 @@ A user can open the web UI in a browser and manage the library without using
 
 In scope:
 
+- Authentication: single owner user + API token.
 - Tags (many-to-many with items) and tag management in the UI.
 - Notes on items.
 - Import endpoints for DOI, URL, BibTeX, RIS.

@@ -17,8 +17,8 @@ Browser / agents / Zotero Connector
  database  storage     (SQLite)
 ```
 
-The server is the only writer. Authentication is added in Phase 2; Phase 1 runs
-without auth to keep the first milestone minimal.
+The server is the only writer. Authentication is added in Phase 4; Phases 1,
+2.1, and 2.2 run without auth to keep early milestones minimal.
 
 ## Backend Layering
 
@@ -65,12 +65,8 @@ backend/
       database.py
       clocks.py
       storage.py
-    models/
-      item.py
-      attachment.py
-    schemas/
-      item.py
-      attachment.py
+    models.py
+    schemas.py
     repositories/
       item_repo.py
       attachment_repo.py
@@ -82,28 +78,44 @@ backend/
 Phase 1 includes items and attachments. No search, no auth, no tags or
 collections.
 
-### Phase 2 — Zotero Connector integration
+### Phase 2.1 — Zotero Connector: basic save workflow
 
-Add authentication and the Zotero Connector adapter (attachments and storage
-already exist from Phase 1):
+Add the Zotero Connector adapter (attachments and storage already exist from
+Phase 1):
 
 ```text
 anchor_server/
   api/routes/
-    zotero_connector.py
-  core/
-    security.py
-  models/
-    note.py            # optional, only if connector needs it
+    zotero_connector.py   # all /connector/* endpoints
   schemas/
-    zotero.py
+    zotero.py             # request/response models for connector payloads
   services/
-    import_service.py
-    zotero_service.py
+    import_service.py     # Zotero item -> Anchor item field mapping
+    zotero_service.py     # session management and save orchestration
+  models.py               # add ConnectorSession table
 ```
 
-Phase 2 also adds `version` and `deleted_at` fields to syncable objects so
-future sync does not need a migration.
+Connector endpoints live under `/connector/*`, outside the public `/api/v1`
+namespace, because the extension expects the local Zotero server contract.
+
+`ConnectorSession` tracks pending attachments so `/connector/sessionProgress`
+can report `done: true` only after every expected attachment has been uploaded.
+
+### Phase 2.2 — Zotero Connector: translator support
+
+Add translator serving so the extension can match pages against official Zotero
+translators:
+
+```text
+anchor_server/
+  data/translators/       # bundled or synced Zotero translator files
+  services/
+    translator_service.py # scan translator files, serve metadata and code
+```
+
+`/connector/getTranslators` returns translator metadata; `/connector/getTranslatorCode`
+returns the JavaScript source. `ping` includes `translatorsHash` for incremental
+updates.
 
 ### Phase 3 — Frontend
 
@@ -123,7 +135,23 @@ frontend/
       SettingsView.vue
 ```
 
-The frontend consumes the same public API as scripts and the Zotero Connector.
+The frontend consumes the same public API as scripts. The Zotero Connector uses
+its own `/connector/*` namespace.
+
+### Phase 4 — Product polish
+
+Add authentication, soft deletes, and schema fields needed for future sync:
+
+```text
+anchor_server/
+  core/
+    security.py
+  models/
+    note.py
+```
+
+Phase 4 also adds `version` and `deleted_at` fields to syncable objects so
+future sync does not need a migration.
 
 ## Schema Migrations
 
@@ -164,9 +192,9 @@ Default layout under `~/.anchor/`:
 
 ## Authentication
 
-Phase 1 has no authentication.
+Phase 1, Phase 2.1, and Phase 2.2 have no authentication.
 
-Phase 2 introduces a single owner user and one API token auto-created on first
+Phase 4 introduces a single owner user and one API token auto-created on first
 startup. The token is stored as a SHA-256 hash. Clients send:
 
 ```text
@@ -190,6 +218,6 @@ sync/deduplication easier.
 
 ## Deletion
 
-Phase 1 uses hard deletes for simplicity. Phase 2 switches to soft deletes
-(`deleted_at`) for items, attachments, and notes so future sync can see
-tombstones.
+Phase 1, Phase 2.1, and Phase 2.2 use hard deletes for simplicity. Phase 4
+switches to soft deletes (`deleted_at`) for items, attachments, and notes so
+future sync can see tombstones.
