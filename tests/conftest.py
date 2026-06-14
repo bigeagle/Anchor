@@ -42,10 +42,9 @@ def db_session(engine):
 @pytest.fixture
 def temp_data_dir(tmp_path, monkeypatch):
     """Use a temporary directory for file attachments during tests."""
-    data_dir = tmp_path / "data"
+    data_dir = (tmp_path / "data").resolve()
     data_dir.mkdir()
     monkeypatch.setattr(settings, "data_dir", data_dir)
-    monkeypatch.setattr(settings, "attachments_dir", data_dir / "attachments")
     return data_dir
 
 

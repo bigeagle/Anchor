@@ -72,10 +72,18 @@ uv run prek run --all-files
 ## Configuration
 
 Anchor uses sensible defaults and loads environment variables from `.env` when
-present. Key settings:
+present. All environment variables are prefixed with `ANCHOR_`:
 
-- `DATABASE_URL` — SQLite database URL (default: `sqlite:///./anchor.db`)
-- `DATA_DIR` — root directory for attachments and runtime data (default: `./data`)
+| Variable | Default | Description |
+|---|---|---|
+| `ANCHOR_DATABASE_URL` | `sqlite:///./anchor.db` | SQLite database URL |
+| `ANCHOR_DATA_DIR` | `./data` | Root directory for runtime data; attachments live in `<DATA_DIR>/attachments` |
+| `ANCHOR_HOST` | `127.0.0.1` | Server bind host |
+| `ANCHOR_PORT` | `8000` | Server bind port |
+| `ANCHOR_LOG_LEVEL` | `info` | Uvicorn log level |
+
+Relative paths in `ANCHOR_DATA_DIR` are resolved against the current working
+directory.
 
 ## Design Docs
 
