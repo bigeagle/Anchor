@@ -1,6 +1,6 @@
 ---
 name: anchor-papers
-description: Access and import papers stored in the local Anchor reference manager. Use when the user asks AI to list, read, search, summarize, cite, download, or save papers stored in Anchor. Connects through Anchor's local HTTP API, supports listing items, reading bibliographic metadata, listing attachments, downloading PDFs, extracting text for analysis, and importing PDFs as new items.
+description: Access, import, and fetch papers for the local Anchor reference manager. Use when the user asks AI to list, read, search, summarize, cite, download, save, or import papers stored in Anchor, or to fetch arXiv papers (metadata, PDF, Markdown, source) and save them into Anchor. Connects through Anchor's local HTTP API and the arXiv API.
 ---
 
 # anchor-papers
@@ -55,6 +55,26 @@ uv run scripts/anchor_papers.py import-pdf ./paper.pdf --title "Paper Title"
 ```
 
 The `text` command returns the attachment as Markdown via Anchor's `/attachments/{id}/markdown` endpoint. It works for PDFs and other supported formats.
+
+## arXiv commands
+
+```bash
+uv run scripts/anchor_papers.py arxiv fetch 1706.03762
+uv run scripts/anchor_papers.py arxiv pdf 1706.03762
+uv run scripts/anchor_papers.py arxiv markdown 1706.03762
+uv run scripts/anchor_papers.py arxiv source 1706.03762
+uv run scripts/anchor_papers.py arxiv save 1706.03762
+```
+
+- `fetch` — fetch and print arXiv metadata (title, authors, abstract, year, categories, PDF URL).
+- `pdf` — download the PDF to a local cache and print the path. Use `--open` to open it on macOS.
+- `markdown` — convert the arXiv PDF to Markdown and print it.
+- `source` — download and extract the TeX source package, print the directory and file list.
+- `save` — create an Anchor item from the arXiv metadata and upload the PDF (unless `--no-pdf`).
+
+Cache is stored under `~/.cache/anchor-papers/arxiv/`.
+
+## Import local PDF
 
 The `import-pdf` command creates a new item and uploads the PDF as its attachment.
 
