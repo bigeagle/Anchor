@@ -13,6 +13,7 @@ app = FastAPI(
 API_PREFIX = "/api/v1"
 
 app.include_router(items.router, prefix=API_PREFIX)
+app.include_router(items.search_router, prefix=API_PREFIX)
 app.include_router(attachments.router, prefix=API_PREFIX)
 app.include_router(zotero_connector.router)
 

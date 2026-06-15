@@ -47,12 +47,15 @@ Use `scripts/anchor_papers.py` to call the API and extract PDF text.
 
 ```bash
 uv run scripts/anchor_papers.py list --limit 20 --query "machine learning"
+uv run scripts/anchor_papers.py search "attention transformer"
 uv run scripts/anchor_papers.py get <item-id>
 uv run scripts/anchor_papers.py attachments <item-id>
 uv run scripts/anchor_papers.py download <attachment-id> ./paper.pdf
 uv run scripts/anchor_papers.py text <attachment-id>
 uv run scripts/anchor_papers.py import-pdf ./paper.pdf --title "Paper Title"
 ```
+
+`search` uses `GET /api/v1/search?q=...` and matches titles, abstracts, authors, identifiers, publication, and other item fields.
 
 The `text` command returns the attachment as Markdown via Anchor's `/attachments/{id}/markdown` endpoint. It works for PDFs and other supported formats.
 
@@ -63,6 +66,7 @@ uv run scripts/anchor_papers.py arxiv fetch 1706.03762
 uv run scripts/anchor_papers.py arxiv pdf 1706.03762
 uv run scripts/anchor_papers.py arxiv markdown 1706.03762
 uv run scripts/anchor_papers.py arxiv source 1706.03762
+uv run scripts/anchor_papers.py arxiv check 1706.03762
 uv run scripts/anchor_papers.py arxiv save 1706.03762
 ```
 
@@ -70,7 +74,8 @@ uv run scripts/anchor_papers.py arxiv save 1706.03762
 - `pdf` — download the PDF to a local cache and print the path. Use `--open` to open it on macOS.
 - `markdown` — convert the arXiv PDF to Markdown and print it.
 - `source` — download and extract the TeX source package, print the directory and file list.
-- `save` — create an Anchor item from the arXiv metadata and upload the PDF (unless `--no-pdf`).
+- `check` — search Anchor for this arXiv ID and report whether it is already saved.
+- `save` — create an Anchor item from the arXiv metadata and upload the PDF (unless `--no-pdf`). `save` also uses `check` to avoid duplicates.
 
 Cache is stored under `~/.cache/anchor-papers/arxiv/`.
 

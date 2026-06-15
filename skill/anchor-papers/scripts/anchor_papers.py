@@ -115,6 +115,12 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_search(args: argparse.Namespace) -> int:
+    params = {"q": args.query, "limit": args.limit}
+    print_json(get_json("search", params))
+    return 0
+
+
 def cmd_get(args: argparse.Namespace) -> int:
     print_json(get_json(f"items/{args.item_id}"))
     return 0
@@ -384,9 +390,62 @@ def cmd_arxiv_source(args: argparse.Namespace) -> int:
     return 0
 
 
+def _find_in_anchor(arxiv_id: str) -> dict | None:
+    """Return the Anchor item that matches this arXiv ID, if any."""
+    results = get_json("search", {"q": arxiv_id, "limit": 100})
+    if not isinstance(results, list):
+        return None
+    abs_url = f"arxiv.org/abs/{arxiv_id}"
+    for item in results:
+        if item.get("arxiv_id") == arxiv_id:
+            return item
+        url = item.get("url") or ""
+        if abs_url in url:
+            return item
+    return None
+
+
+def cmd_arxiv_check(args: argparse.Namespace) -> int:
+    client = ArxivClient()
+    metadata = client.fetch_metadata(args.arxiv_id)
+    existing = _find_in_anchor(args.arxiv_id)
+
+    if existing is None:
+        print_json(
+            {
+                "arxiv_id": args.arxiv_id,
+                "title": metadata["title"],
+                "in_anchor": False,
+                "item_id": None,
+            }
+        )
+        return 0
+
+    print_json(
+        {
+            "arxiv_id": args.arxiv_id,
+            "title": metadata["title"],
+            "in_anchor": True,
+            "item_id": existing["id"],
+        }
+    )
+    return 0
+
+
 def cmd_arxiv_save(args: argparse.Namespace) -> int:
     client = ArxivClient()
     metadata = client.fetch_metadata(args.arxiv_id)
+
+    existing = _find_in_anchor(args.arxiv_id)
+    if existing is not None:
+        print_json(
+            {
+                "status": "exists",
+                "item_id": existing["id"],
+                "title": metadata["title"],
+            }
+        )
+        return 0
 
     item_payload = {
         "title": metadata["title"],
@@ -411,7 +470,7 @@ def cmd_arxiv_save(args: argparse.Namespace) -> int:
             pdf_path.read_bytes(),
         )
 
-    print_json({"item": item, "attachment": attachment})
+    print_json({"status": "saved", "item": item, "attachment": attachment})
     return 0
 
 
@@ -430,6 +489,13 @@ def main() -> int:
     list_parser.add_argument("--offset", type=int, default=0)
     list_parser.add_argument("--query", "-q", type=str, default=None)
     list_parser.set_defaults(func=cmd_list)
+
+    search_parser = subparsers.add_parser(
+        "search", help="Search items across titles, authors, identifiers, etc."
+    )
+    search_parser.add_argument("query")
+    search_parser.add_argument("--limit", type=int, default=20)
+    search_parser.set_defaults(func=cmd_search)
 
     get_parser = subparsers.add_parser("get", help="Get an item by ID")
     get_parser.add_argument("item_id")
@@ -504,6 +570,12 @@ def main() -> int:
     )
     arxiv_source.add_argument("arxiv_id")
     arxiv_source.set_defaults(func=cmd_arxiv_source)
+
+    arxiv_check = arxiv_subparsers.add_parser(
+        "check", help="Check if an arXiv paper is already in Anchor"
+    )
+    arxiv_check.add_argument("arxiv_id")
+    arxiv_check.set_defaults(func=cmd_arxiv_check)
 
     arxiv_save = arxiv_subparsers.add_parser(
         "save", help="Save the arXiv paper to Anchor"

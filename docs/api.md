@@ -41,6 +41,18 @@ DELETE /api/v1/items/{item_id}
 
 Creators are embedded in item create/update payloads.
 
+### Search
+
+```text
+GET /api/v1/search?q=...
+```
+
+Search across item titles, abstracts, authors, publication, identifiers (`doi`,
+`arxiv_id`, `isbn`, `url`), volume/issue/pages, language, and item type.
+
+- `q` (required) — search term
+- `limit` — default 20, max 1000
+
 ### Attachments
 
 ```text

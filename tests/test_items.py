@@ -130,3 +130,44 @@ def test_arxiv_id_persisted(client: TestClient, sample_item_payload):
     item_id = created["id"]
     response = client.get(f"/api/v1/items/{item_id}")
     assert response.json()["arxiv_id"] == sample_item_payload["arxiv_id"]
+
+
+def test_search_items(client: TestClient, sample_item_payload):
+    """GET /search should match items by title, arxiv_id, authors, or url."""
+    created = client.post("/api/v1/items/", json=sample_item_payload).json()
+
+    # Title substring
+    response = client.get("/api/v1/search/?q=Test")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["id"] == created["id"]
+
+    # arxiv_id
+    response = client.get("/api/v1/search/?q=2401.00001")
+    assert response.status_code == 200
+    assert response.json()[0]["id"] == created["id"]
+
+    # Author last name
+    response = client.get("/api/v1/search/?q=Smith")
+    assert response.status_code == 200
+    assert response.json()[0]["id"] == created["id"]
+
+    # DOI prefix
+    response = client.get("/api/v1/search/?q=10.1234")
+    assert response.status_code == 200
+    assert response.json()[0]["id"] == created["id"]
+
+
+def test_search_no_match(client: TestClient, sample_item_payload):
+    """GET /search with a non-matching term should return an empty list."""
+    client.post("/api/v1/items/", json=sample_item_payload)
+    response = client.get("/api/v1/search/?q=NonexistentTerm123")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_search_missing_query(client: TestClient):
+    """GET /search without the required q parameter should return 422."""
+    response = client.get("/api/v1/search/")
+    assert response.status_code == 422

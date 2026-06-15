@@ -4,6 +4,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import String, or_
 from sqlalchemy.orm import Session
 
 from anchor_server.database import get_db
@@ -12,6 +13,7 @@ from anchor_server.schemas import ItemCreate, ItemOut, ItemUpdate
 from anchor_server.services import storage
 
 router = APIRouter(prefix="/items", tags=["items"])
+search_router = APIRouter(prefix="/search", tags=["search"])
 
 
 @router.get("/", response_model=list[ItemOut])
@@ -78,3 +80,29 @@ def delete_item(item_id: uuid.UUID, db: Session = Depends(get_db)) -> None:
         storage.delete_attachment(attachment.storage_path)
     db.delete(item)
     db.commit()
+
+
+@search_router.get("/", response_model=list[ItemOut])
+def search_items(
+    q: str = Query(..., min_length=1, description="Search query"),
+    limit: int = Query(20, ge=1, le=1000),
+    db: Session = Depends(get_db),
+) -> list[Item]:
+    """Search items across titles, abstracts, authors, identifiers, and publication."""
+    term = f"%{q}%"
+    filters = [
+        Item.title.ilike(term),
+        Item.abstract.ilike(term),
+        Item.publication.ilike(term),
+        Item.doi.ilike(term),
+        Item.arxiv_id.ilike(term),
+        Item.isbn.ilike(term),
+        Item.url.ilike(term),
+        Item.volume.ilike(term),
+        Item.issue.ilike(term),
+        Item.pages.ilike(term),
+        Item.language.ilike(term),
+        Item.item_type.ilike(term),
+        Item.authors.cast(String).ilike(term),
+    ]
+    return db.query(Item).filter(or_(*filters)).limit(limit).all()
