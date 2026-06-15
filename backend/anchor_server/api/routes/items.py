@@ -4,7 +4,7 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import String, or_
+from sqlalchemy import String, asc, desc, or_
 from sqlalchemy.orm import Session
 
 from anchor_server.database import get_db
@@ -15,19 +15,47 @@ from anchor_server.services import storage
 router = APIRouter(prefix="/items", tags=["items"])
 search_router = APIRouter(prefix="/search", tags=["search"])
 
+# Fields exposed for sorting by GET /items.
+SORTABLE_FIELDS = {
+    "date_added": Item.date_added,
+    "title": Item.title,
+    "year": Item.year,
+    "publication": Item.publication,
+    "item_type": Item.item_type,
+    "doi": Item.doi,
+    "arxiv_id": Item.arxiv_id,
+}
+
 
 @router.get("/", response_model=list[ItemOut])
 def list_items(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
     q: str | None = Query(None, description="Filter by title substring"),
+    order_by: str = Query(
+        "date_added",
+        description=f"Sort field. One of: {', '.join(SORTABLE_FIELDS)}.",
+    ),
+    sort: str = Query("desc", pattern="^(asc|desc)$", description="Sort direction."),
     db: Session = Depends(get_db),
 ) -> list[Item]:
-    """List items with optional title filter and pagination."""
+    """List items with optional title filter, sorting, and pagination."""
+    if order_by not in SORTABLE_FIELDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid order_by field. Allowed: {', '.join(SORTABLE_FIELDS)}",
+        )
+
     query = db.query(Item)
     if q:
         query = query.filter(Item.title.ilike(f"%{q}%"))
-    return query.offset(skip).limit(limit).all()
+
+    order_clause = (
+        desc(SORTABLE_FIELDS[order_by])
+        if sort == "desc"
+        else asc(SORTABLE_FIELDS[order_by])
+    )
+    return query.order_by(order_clause).offset(skip).limit(limit).all()
 
 
 @router.post("/", response_model=ItemOut, status_code=201)

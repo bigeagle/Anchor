@@ -34,10 +34,13 @@ PATCH  /api/v1/items/{item_id}
 DELETE /api/v1/items/{item_id}
 ```
 
-`GET /api/v1/items` supports pagination only:
+`GET /api/v1/items` supports pagination, filtering, and sorting:
 
-- `limit`
-- `offset`
+- `limit` / `offset` — pagination
+- `q` — filter by title substring
+- `order_by` — sort field: `date_added` (default), `title`, `year`,
+  `publication`, `item_type`, `doi`, `arxiv_id`
+- `sort` — `asc` or `desc` (default `desc`)
 
 Creators are embedded in item create/update payloads.
 

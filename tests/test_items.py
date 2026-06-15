@@ -5,6 +5,8 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
+from anchor_server.models import Item
+
 
 @pytest.fixture
 def sample_item_payload():
@@ -171,3 +173,41 @@ def test_search_missing_query(client: TestClient):
     """GET /search without the required q parameter should return 422."""
     response = client.get("/api/v1/search/")
     assert response.status_code == 422
+
+
+def test_list_items_sorted_by_year(client: TestClient, db_session):
+    """GET /items should support order_by and sort parameters."""
+    # Create items with different years.
+    for title, year in [("Old", 2000), ("New", 2024), ("Mid", 2010)]:
+        item = Item(title=title, item_type="journalArticle", year=year)
+        db_session.add(item)
+    db_session.commit()
+
+    response = client.get("/api/v1/items/?order_by=year&sort=desc")
+    assert response.status_code == 200
+    titles = [i["title"] for i in response.json()]
+    assert titles == ["New", "Mid", "Old"]
+
+    response = client.get("/api/v1/items/?order_by=year&sort=asc")
+    assert response.status_code == 200
+    titles = [i["title"] for i in response.json()]
+    assert titles == ["Old", "Mid", "New"]
+
+
+def test_list_items_sorted_by_title(client: TestClient, db_session):
+    """GET /items should sort by title."""
+    for title in ["Beta", "Alpha", "Gamma"]:
+        item = Item(title=title, item_type="journalArticle")
+        db_session.add(item)
+    db_session.commit()
+
+    response = client.get("/api/v1/items/?order_by=title&sort=asc")
+    assert response.status_code == 200
+    titles = [i["title"] for i in response.json()]
+    assert titles == ["Alpha", "Beta", "Gamma"]
+
+
+def test_list_items_invalid_order_by(client: TestClient):
+    """GET /items should reject unknown order_by fields."""
+    response = client.get("/api/v1/items/?order_by=unknown")
+    assert response.status_code == 400
