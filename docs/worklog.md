@@ -174,3 +174,125 @@ Phase 2: Zotero Connector integration. This will add a single-owner auth model, 
 ## Next step
 
 Phase 3: a web frontend that consumes the public API to browse, create, edit, and delete items and attachments.
+
+
+---
+
+# Worklog — Follow-up changes (post Phase 2)
+
+> Period: 2026-06-15
+
+## Attachment Markdown conversion endpoint
+
+Added `GET /api/v1/attachments/{attachment_id}/markdown` so AI agents can read
+papers stored in Anchor as Markdown text.
+
+- Installed `markitdown` (includes PDF support via pdfminer/pdfplumber).
+- Added `markdown_cache_dir` config option (default `./data/cache/markdown`).
+- Added `markdown_service.py`:
+  - Converts attachments to Markdown using `MarkItDown`.
+  - Caches results on disk keyed by attachment ID.
+  - Invalidates cache when an attachment is deleted.
+  - Cache is considered stale if the source file is newer than the cached
+    Markdown (compared via `attachment.date_added`).
+- Endpoint returns `text/markdown` via `PlainTextResponse`.
+- Added 4 tests covering conversion, cache reuse, deletion invalidation, and 404.
+
+Commit: `a9cbe11`
+
+## Item list sorting
+
+Extended `GET /api/v1/items/` with `order_by` and `sort` query parameters.
+
+- `order_by`: `date_added`, `title`, `year`, `publication`, `item_type`, `doi`,
+  `arxiv_id`.
+- `sort`: `asc` or `desc` (default `desc`).
+- Unknown `order_by` values return `400 Bad Request`.
+- Updated `docs/api.md` and added 3 tests.
+
+Commit: `dc65d6f`
+
+---
+
+# Worklog — AI agent skill: anchor-papers
+
+> Period: 2026-06-15
+
+## Goal
+
+Give AI agents a convenient way to access, search, import, and fetch papers
+stored in the local Anchor library.
+
+## What was delivered
+
+### 1. Project skill: `skill/anchor-papers/`
+
+- Added `SKILL.md` with metadata, API cheat sheet, and workflow guidance.
+- Added `scripts/anchor_papers.py`, an all-in-one CLI using PEP 723 inline
+dependencies (`requests`, `markitdown[pdf]`).
+
+Supported library commands:
+
+- `list [--query]` — list items, with optional title-substring filter.
+- `search <query>` — full cross-field search via `GET /api/v1/search`.
+- `get <item_id>` — item details.
+- `attachments <item_id>` — list attachments.
+- `download <attachment_id> <output>` — download attachment bytes.
+- `text <attachment_id>` — Markdown conversion via
+  `GET /api/v1/attachments/{id}/markdown`.
+- `import-pdf <path> --title ... --author ... --item-type ...` — create an item
+  and upload a PDF, with optional metadata flags (year, url, doi, arxiv_id,
+  abstract, publication, volume, issue, pages, language, isbn).
+
+### 2. arXiv integration
+
+Added an `arxiv` subcommand mirroring `zoterios arxiv`:
+
+- `arxiv fetch <arxiv_id>` — fetch metadata from arXiv Atom API.
+- `arxiv pdf <arxiv_id>` — download PDF to `~/.cache/anchor-papers/arxiv/pdf/`.
+- `arxiv markdown <arxiv_id>` — convert PDF to Markdown.
+- `arxiv source <arxiv_id>` — download and extract TeX source.
+- `arxiv check <arxiv_id>` — search Anchor for an existing copy.
+- `arxiv save <arxiv_id> [--no-pdf]` — save metadata (and PDF) to Anchor,
+  skipping duplicates via `arxiv check`.
+
+### 3. Backend search endpoint
+
+- Added `GET /api/v1/search?q=...&limit=...`.
+- Uses SQL `ilike` across titles, abstracts, authors (JSON cast), publication,
+  identifiers (`doi`, `arxiv_id`, `isbn`, `url`), volume/issue/pages, language,
+  and item type.
+- Registered via a separate `search_router` in `main.py`.
+- Updated `docs/api.md`.
+
+### 4. Tests
+
+- Added 3 backend tests for `/api/v1/search` in `tests/test_items.py`:
+  - search by title/arxiv_id/author/DOI
+  - no-match empty result
+  - missing `q` returns 422
+- Full test suite: 53 passed.
+
+## Decisions and course corrections
+
+| Topic | Initial approach | Final approach | Why |
+|---|---|---|---|
+| PDF text extraction in skill | Local `pymupdf` | Anchor's `/attachments/{id}/markdown` | Reuse Anchor's existing `markitdown` conversion; fewer dependencies. |
+| arXiv Markdown | Reuse Anchor endpoint | Local `markitdown[pdf]` | arXiv PDF is not yet in Anchor; local conversion is needed. |
+| `check` implementation | Client-side full scan | Backend `/api/v1/search` | Scalable and cleaner; personal libraries can still use search. |
+| `import-pdf` required fields | Only `--title` | `--title`, `--author`, `--item-type` | Match user expectation for minimal viable bibliographic record. |
+| Skill location | `.kimi-code/skills/` | `skill/anchor-papers/` | User explicitly asked for a top-level `skill/` directory. |
+
+## Commits
+
+- `e0b3283` — feat: add anchor-papers skill for AI agent paper access
+- `e15dc6e` — feat(anchor-papers): add arxiv subcommands (fetch, pdf, markdown, source, save)
+- `3e3203f` — feat: add /api/v1/search endpoint, arxiv check command, and backend tests
+
+## Known limitations
+
+- `/api/v1/search` uses `LIKE` filters, not FTS5, so it is a simple substring
+  search and may slow down on very large libraries.
+- `arxiv check` relies on the user having restarted the local Anchor server so
+  that `/api/v1/search` is available.
+- `arxiv pdf --open` only works on macOS.
