@@ -44,6 +44,7 @@ Attachments:
 ## Helper script
 
 Use `scripts/anchor_papers.py` to call the API and extract PDF text.
+The script path is relative to the directory of current skill file.
 
 ```bash
 uv run scripts/anchor_papers.py list --limit 20 --query "machine learning"
