@@ -4,13 +4,13 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy.orm import Session
 
 from anchor_server.database import get_db
 from anchor_server.models import Attachment, Item
 from anchor_server.schemas import AttachmentOut
-from anchor_server.services import storage
+from anchor_server.services import markdown_service, storage
 
 router = APIRouter(tags=["attachments"])
 
@@ -118,5 +118,29 @@ def delete_attachment(attachment_id: uuid.UUID, db: Session = Depends(get_db)) -
         raise HTTPException(status_code=404, detail="Attachment not found")
 
     storage.delete_attachment(attachment.storage_path)
+    markdown_service.invalidate_attachment_markdown_cache(str(attachment_id))
     db.delete(attachment)
     db.commit()
+
+
+@router.get("/attachments/{attachment_id}/markdown")
+def get_attachment_markdown(
+    attachment_id: uuid.UUID, db: Session = Depends(get_db)
+) -> PlainTextResponse:
+    """Return the Markdown representation of an attachment.
+
+    The result is cached on disk using the attachment ID as the cache key and
+    invalidated when the attachment is deleted.
+    """
+    attachment = db.get(Attachment, attachment_id)
+    if attachment is None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+
+    try:
+        text = markdown_service.get_attachment_markdown(attachment)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to convert attachment to Markdown: {exc}",
+        ) from exc
+    return PlainTextResponse(content=text, media_type="text/markdown")

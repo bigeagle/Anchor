@@ -31,7 +31,16 @@ class Settings(BaseSettings):
     zotero_repo_url: str = "https://repo.zotero.org/repo/"
     http_proxy: str | None = None
 
-    @field_validator("data_dir", "attachments_dir", "translators_dir", mode="after")
+    # Markdown conversion cache for attachments
+    markdown_cache_dir: Path = Path("./data/cache/markdown")
+
+    @field_validator(
+        "data_dir",
+        "attachments_dir",
+        "translators_dir",
+        "markdown_cache_dir",
+        mode="after",
+    )
     @classmethod
     def _resolve_path(cls, value: Path) -> Path:
         """Resolve relative paths against the current working directory."""
