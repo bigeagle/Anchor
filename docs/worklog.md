@@ -101,3 +101,76 @@
 ## Next step
 
 Phase 2: Zotero Connector integration. This will add a single-owner auth model, API token, and endpoints to accept saves from the Zotero Connector.
+
+
+---
+
+# Worklog — Phase 2
+
+> Status: **completed**
+> Period: 2026-06-15 ~ 2026-06-15
+> Goal (from `docs/product.md`): make the Zotero browser extension able to save items and attachments into Anchor over the local HTTP server.
+
+## What was delivered
+
+### Phase 2.1 — Basic connector save workflow
+
+- Implemented the modern Zotero connector workflow under `/connector/*`:
+  - `POST /connector/ping` — heartbeat with capability prefs.
+  - `POST /connector/getSelectedCollection` — returns the single-owner "My Library" target.
+  - `POST /connector/saveItems` — creates Anchor items from Zotero translator payloads.
+  - `POST /connector/sessionProgress` — tracks pending attachments and reports `done: true` only after all expected uploads finish.
+  - `POST /connector/saveSnapshot` — creates a parent item; uses `document` for direct PDF saves and `webpage` otherwise.
+  - `POST /connector/saveAttachment` — stores PDF/EPUB binaries uploaded by the extension.
+  - `POST /connector/saveStandaloneAttachment` — creates a parent item + attachment in one step for restricted pages.
+  - `POST /connector/saveSingleFile` — stores SingleFile HTML snapshots.
+- Added `ConnectorSession` model and Alembic migration to correlate connector IDs with Anchor UUIDs across the multi-request save sequence.
+- Added `import_service.py` for Zotero → Anchor field mapping, including `archiveID` → `arxiv_id` handling.
+- Added `zotero_service.py` for save orchestration and session management.
+- Moved API routes and schemas into `api/routes/` and `schemas/` packages.
+- Added 11 connector tests covering ping, save flow, snapshots, and standalone attachments.
+
+### Phase 2.2 — Translator support
+
+- Added `translator_sync.py` to download translators from `repo.zotero.org` and cache them in `translators_dir`.
+- Added `translator_service.py` to serve metadata/code, compute `translatorsHash`/`sortedTranslatorHash`, and provide proxy/hostname hints.
+- Added connector endpoints:
+  - `POST /connector/getTranslators`
+  - `POST /connector/getTranslatorCode`
+  - `GET /connector/proxies`
+  - `GET /connector/getClientHostnames`
+- Updated `/connector/ping` to include translator hashes.
+- Added config options `translators_dir`, `zotero_repo_url`, and `http_proxy`.
+- Added 11 translator tests.
+
+### Supporting changes
+
+- Split Phase 2 into Phase 2.1 and Phase 2.2 in `docs/product.md`, `docs/architecture.md`, and `docs/api.md`.
+- Moved authentication and soft deletes from Phase 2 to Phase 4 in docs.
+- Added `.env.dev` with separate `anchor.dev.db` and `data-dev/` so manual testing does not touch production data.
+- Added `backup/` directory policy in `AGENTS.md` requiring a timestamped DB backup before production migrations.
+
+## Decisions and course corrections
+
+| Topic | Initial plan | Final approach | Why |
+|---|---|---|---|
+| Authentication in Phase 2 | Include single-owner API token | Moved to Phase 4 | Connector namespace (`/connector/*`) does not use auth; auth is a product-polish feature. |
+| Phase 2 scope | Monolithic Phase 2 | Split into 2.1 (basic save) and 2.2 (translator support) | Translator serving is orthogonal to save flow and adds repo-sync complexity; splitting keeps milestones reviewable. |
+| Attachment upload | Extension uploads binaries | Server does not download attachments | Modern connector workflow; simpler and avoids proxy/network issues on the server side. |
+| `sessionProgress` | Simple `done: true` always | Track pending attachments | User requested the complete version so the extension progress window is accurate. |
+| `arxiv_id` | Map only `arxivID` field | Also map `archiveID` and preserve `arXiv:` prefix | Zotero arXiv translator populates `archiveID`; user wants the canonical prefix kept. |
+| Translator source | Git submodule or raw GitHub | Official `repo.zotero.org` API + local cache | Matches Zotero client behavior, supports incremental updates, and works through the user's HTTP proxy. |
+| Missing connector endpoints | Not implemented | Added `hasAttachmentResolvers` (returns `false`) and `delaySync` (no-op) | Manual testing showed the extension stalls without these endpoints. |
+
+## Known limitations / deferred to later phases
+
+- No duplicate detection during import (explicitly deferred from Phase 2.1).
+- No legacy connector workflow where the server downloads attachments.
+- No word-processor integration, `/connector/import`, `/connector/installStyle`.
+- Translator sync is a manual command for now; no automatic background refresh.
+- No full-text search improvements (Phase 4).
+- No authentication or multi-user support (Phase 4).
+
+## Next step
+
+Phase 3: a web frontend that consumes the public API to browse, create, edit, and delete items and attachments.
