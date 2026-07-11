@@ -34,11 +34,15 @@ class Settings(BaseSettings):
     # Markdown conversion cache for attachments
     markdown_cache_dir: Path = Path("./data/cache/markdown")
 
+    # Phase 3 — serve the built frontend SPA at "/" when this directory exists
+    frontend_dist_dir: Path = Path("./frontend/dist")
+
     @field_validator(
         "data_dir",
         "attachments_dir",
         "translators_dir",
         "markdown_cache_dir",
+        "frontend_dist_dir",
         mode="after",
     )
     @classmethod

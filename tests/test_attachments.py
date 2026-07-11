@@ -124,7 +124,7 @@ def test_delete_item_cascades_attachments(client: TestClient, item_id):
 def test_upload_to_unknown_item(client: TestClient):
     """Uploading to a non-existent item should return 404."""
     response = client.post(
-        f"/items/{uuid.uuid4()}/attachments",
+        f"/api/v1/items/{uuid.uuid4()}/attachments",
         files={"file": ("orphan.txt", BytesIO(b"x"), "text/plain")},
     )
     assert response.status_code == 404

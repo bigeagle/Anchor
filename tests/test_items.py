@@ -59,7 +59,7 @@ def test_get_item(client: TestClient, sample_item_payload):
 
 def test_get_item_not_found(client: TestClient):
     """GET /items/{id} with unknown id should return 404."""
-    response = client.get(f"/items/{uuid.uuid4()}")
+    response = client.get(f"/api/v1/items/{uuid.uuid4()}")
     assert response.status_code == 404
 
 
@@ -77,7 +77,7 @@ def test_update_item(client: TestClient, sample_item_payload):
 
 def test_update_item_not_found(client: TestClient):
     """PUT /items/{id} with unknown id should return 404."""
-    response = client.put(f"/items/{uuid.uuid4()}", json={"title": "X"})
+    response = client.put(f"/api/v1/items/{uuid.uuid4()}", json={"title": "X"})
     assert response.status_code == 404
 
 
@@ -95,7 +95,7 @@ def test_delete_item(client: TestClient, sample_item_payload):
 
 def test_delete_item_not_found(client: TestClient):
     """DELETE /items/{id} with unknown id should return 404."""
-    response = client.delete(f"/items/{uuid.uuid4()}")
+    response = client.delete(f"/api/v1/items/{uuid.uuid4()}")
     assert response.status_code == 404
 
 
