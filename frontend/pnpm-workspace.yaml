@@ -1,0 +1,5 @@
+# pnpm 11 settings live here (the `pnpm` field in package.json is ignored).
+# The global config leaves esbuild's build approval as a placeholder; approve it
+# for this project only — esbuild's postinstall is required by Vite.
+allowBuilds:
+  esbuild: true
