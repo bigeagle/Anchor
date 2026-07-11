@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
+import PdfViewer from '@/components/PdfViewer.vue';
 import { api, isPdf, type Attachment } from '@/services/api';
 import { formatFileSize } from '@/utils/format';
 
@@ -38,7 +39,9 @@ const kindLabel = computed(() => (isPdf(props.attachment) ? 'PDF' : 'HTML'));
         新标签页打开 ↗
       </a>
     </div>
+    <PdfViewer v-if="isPdf(attachment)" :src="fileUrl" class="min-h-0 flex-1" />
     <iframe
+      v-else
       :src="fileUrl"
       :title="attachment.filename"
       class="min-h-0 w-full flex-1 border-0 bg-white"
