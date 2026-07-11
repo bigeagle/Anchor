@@ -74,6 +74,11 @@ the library (search / sort / pagination) and viewing PDF and HTML attachments
 inline. `pnpm build` runs the type check and produces a production bundle in
 `frontend/dist/`.
 
+Once the bundle is built, the backend also serves the SPA itself: open
+`http://127.0.0.1:23119/` (no dev server needed). The mount only happens when
+`ANCHOR_FRONTEND_DIST_DIR` points at a directory containing `index.html`;
+unknown paths fall back to `index.html` so client-side routes survive refresh.
+
 Run the test suite:
 
 ```bash
@@ -108,6 +113,7 @@ Available template variables: `year`, `title`, `title_slug`, `authors`,
 `authors_last_names`, `authors_short`, `item_type`, `arxiv_id`, `publication`.
 | `ANCHOR_PORT` | `23119` | Server bind port (same default as Zotero local server) |
 | `ANCHOR_LOG_LEVEL` | `info` | Uvicorn log level |
+| `ANCHOR_FRONTEND_DIST_DIR` | `./frontend/dist` | Built frontend bundle served at `/` when it contains `index.html` |
 
 Relative paths in `ANCHOR_DATA_DIR` are resolved against the current working
 directory.
