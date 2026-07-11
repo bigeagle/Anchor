@@ -60,6 +60,20 @@ docs are at `/docs`.
 
 To start with the production `.env` instead, omit `--env-file .env.dev`.
 
+Start the web frontend (Vue 3 + Vite + Tailwind). The dev server proxies `/api`
+to the backend, so the backend must be running:
+
+```bash
+cd frontend
+pnpm install
+pnpm dev
+```
+
+The UI is available at `http://localhost:5173`. It currently supports browsing
+the library (search / sort / pagination) and viewing PDF and HTML attachments
+inline. `pnpm build` runs the type check and produces a production bundle in
+`frontend/dist/`.
+
 Run the test suite:
 
 ```bash
