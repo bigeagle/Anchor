@@ -43,12 +43,14 @@ async function fetchItem() {
   try {
     const data = await api.getItem(props.id);
     item.value = data;
+    document.title = `${data.title} - Anchor 资料库`;
     // Prefer opening a PDF first; otherwise fall back to the first viewable file.
     const preferred = data.attachments.find(isPdf) ?? data.attachments.find(isViewable);
     activeAttachmentId.value = preferred?.id ?? null;
   } catch (err) {
     console.error('Failed to load item:', err);
     error.value = '条目加载失败或不存在。';
+    document.title = '条目不存在 - Anchor 资料库';
   } finally {
     loading.value = false;
   }
