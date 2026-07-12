@@ -25,6 +25,7 @@ const item = ref<Item | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const activeAttachmentId = ref<string | null>(null);
+const metadataCollapsed = ref(false);
 
 const viewableAttachments = computed<Attachment[]>(() =>
   (item.value?.attachments ?? []).filter(isViewable),
@@ -80,17 +81,45 @@ watch(() => props.id, fetchItem);
 </script>
 
 <template>
-  <div class="flex h-full">
-    <!-- Metadata panel -->
-    <aside class="flex w-96 shrink-0 flex-col border-r border-gray-200 bg-white">
-      <div class="shrink-0 border-b border-gray-100 px-5 py-3">
+  <div class="relative flex h-full overflow-hidden">
+    <!-- Metadata panel (right side, collapsible; first in DOM, ordered last) -->
+    <aside
+      :class="[
+        'order-2 flex w-96 shrink-0 flex-col bg-white transition-[margin] duration-200',
+        metadataCollapsed ? '-mr-96' : 'border-l border-gray-200',
+      ]"
+    >
+      <div
+        class="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 py-3"
+      >
         <router-link to="/" class="text-sm text-blue-600 hover:text-blue-800">
           ← 返回资料库
         </router-link>
+        <button
+          class="rounded p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+          title="收起元数据"
+          @click="metadataCollapsed = true"
+        >
+          <svg
+            class="h-4 w-4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M13 5l7 7-7 7M5 5l7 7-7 7"
+            />
+          </svg>
+        </button>
       </div>
 
       <div v-if="loading" class="flex-1 py-16 text-center">
-        <div class="inline-block h-6 w-6 animate-spin rounded-full border-b-2 border-gray-900"></div>
+        <div
+          class="inline-block h-6 w-6 animate-spin rounded-full border-b-2 border-gray-900"
+        ></div>
       </div>
 
       <div v-else-if="error" class="flex-1 px-5 py-8 text-center text-red-600">{{ error }}</div>
@@ -225,16 +254,39 @@ watch(() => props.id, fetchItem);
     </aside>
 
     <!-- Viewer panel -->
-    <section class="min-w-0 flex-1 bg-gray-100">
+    <section class="order-1 min-w-0 flex-1 bg-gray-100">
       <AttachmentViewer v-if="activeAttachment" :attachment="activeAttachment" />
       <div
         v-else
         class="flex h-full flex-col items-center justify-center gap-2 text-gray-400"
       >
         <span class="text-5xl">📄</span>
-        <p v-if="viewableAttachments.length">从左侧选择附件查看</p>
+        <p v-if="viewableAttachments.length">从右侧选择附件查看</p>
         <p v-else>该条目没有可在线预览的 PDF / HTML 附件</p>
       </div>
     </section>
+
+    <!-- Expand button shown while the metadata panel is collapsed -->
+    <button
+      v-if="metadataCollapsed"
+      class="absolute right-3 top-14 z-40 flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white/90 px-3 py-2 text-gray-600 shadow-lg backdrop-blur-sm transition-colors hover:bg-white"
+      title="展开元数据"
+      @click="metadataCollapsed = false"
+    >
+      <svg
+        class="h-4 w-4"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M11 19l-7-7 7-7M19 19l-7-7 7-7"
+        />
+      </svg>
+      <span class="text-sm font-medium">元数据</span>
+    </button>
   </div>
 </template>
