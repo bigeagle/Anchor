@@ -254,39 +254,72 @@ watch(() => props.id, fetchItem);
     </aside>
 
     <!-- Viewer panel -->
-    <section class="order-1 min-w-0 flex-1 bg-gray-100">
-      <AttachmentViewer v-if="activeAttachment" :attachment="activeAttachment" />
+    <section class="order-1 flex min-w-0 flex-1 flex-col bg-gray-100">
+      <!-- Viewer toolbar; rendered when there is something to show in it -->
       <div
-        v-else
-        class="flex h-full flex-col items-center justify-center gap-2 text-gray-400"
+        v-if="activeAttachment || metadataCollapsed"
+        class="flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 py-2 text-sm"
       >
-        <span class="text-5xl">📄</span>
-        <p v-if="viewableAttachments.length">从右侧选择附件查看</p>
-        <p v-else>该条目没有可在线预览的 PDF / HTML 附件</p>
+        <template v-if="activeAttachment">
+          <span
+            :class="[
+              'rounded px-1.5 py-0.5 text-xs font-semibold',
+              isPdf(activeAttachment) ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700',
+            ]"
+          >
+            {{ isPdf(activeAttachment) ? 'PDF' : 'HTML' }}
+          </span>
+          <span class="min-w-0 flex-1 truncate text-gray-700" :title="activeAttachment.filename">
+            {{ activeAttachment.filename }}
+          </span>
+          <span class="shrink-0 text-xs text-gray-400">
+            {{ formatFileSize(activeAttachment.size) }}
+          </span>
+          <a
+            :href="api.attachmentFileUrl(activeAttachment.id)"
+            target="_blank"
+            rel="noopener"
+            class="shrink-0 rounded-lg border border-gray-300 px-3 py-1 text-gray-600 transition-colors hover:bg-gray-100"
+          >
+            新标签页打开 ↗
+          </a>
+        </template>
+        <span v-else class="flex-1" />
+
+        <button
+          v-if="metadataCollapsed"
+          class="flex shrink-0 items-center gap-1 rounded-lg border border-gray-300 px-3 py-1 text-gray-600 transition-colors hover:bg-gray-100"
+          title="展开元数据"
+          @click="metadataCollapsed = false"
+        >
+          <svg
+            class="h-3.5 w-3.5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M11 19l-7-7 7-7M19 19l-7-7 7-7"
+            />
+          </svg>
+          元数据
+        </button>
+      </div>
+
+      <div class="min-h-0 flex-1">
+        <AttachmentViewer v-if="activeAttachment" :attachment="activeAttachment" />
+        <div
+          v-else
+          class="flex h-full flex-col items-center justify-center gap-2 text-gray-400"
+        >
+          <span class="text-5xl">📄</span>
+          <p v-if="viewableAttachments.length">从右侧选择附件查看</p>
+          <p v-else>该条目没有可在线预览的 PDF / HTML 附件</p>
+        </div>
       </div>
     </section>
-
-    <!-- Expand button shown while the metadata panel is collapsed -->
-    <button
-      v-if="metadataCollapsed"
-      class="absolute right-3 top-14 z-40 flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white/90 px-3 py-2 text-gray-600 shadow-lg backdrop-blur-sm transition-colors hover:bg-white"
-      title="展开元数据"
-      @click="metadataCollapsed = false"
-    >
-      <svg
-        class="h-4 w-4"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        viewBox="0 0 24 24"
-      >
-        <path
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          d="M11 19l-7-7 7-7M19 19l-7-7 7-7"
-        />
-      </svg>
-      <span class="text-sm font-medium">元数据</span>
-    </button>
   </div>
 </template>
