@@ -20,6 +20,9 @@ Browser / agents / Zotero Connector
 The server is the only writer. Authentication is added in Phase 4; Phases 1,
 2.1, and 2.2 run without auth to keep early milestones minimal.
 
+For multi-device deployments, the same codebase can also run as a central
+sync server or as a syncing device; see [sync.md](sync.md) for that design.
+
 ## Backend Layering
 
 The backend keeps three concerns separate:
@@ -52,31 +55,29 @@ option, but the default is SQLAlchemy + separate Pydantic schemas.
 
 ```text
 backend/
-  pyproject.toml
   anchor_server/
     main.py
-    settings.py
+    config.py          # pydantic-settings, ANCHOR_* env vars
+    database.py
+    enums.py
+    models.py          # all ORM tables in one module
+    schemas/           # Pydantic request/response contracts
     api/
-      deps.py
       routes/
         items.py
         attachments.py
-    core/
-      database.py
-      clocks.py
-      storage.py
-    models.py
-    schemas.py
-    repositories/
-      item_repo.py
-      attachment_repo.py
     services/
-      item_service.py
-      attachment_service.py
+      storage.py       # attachment file storage
+      import_service.py
 ```
 
 Phase 1 includes items and attachments. No search, no auth, no tags or
 collections.
+
+Note: the layering above still describes the intended data flow, but the code
+keeps services calling the ORM directly — there is no separate `core/` or
+`repositories/` package yet. Introduce them only when a second persistence
+backend or genuinely shared query logic justifies the indirection.
 
 ### Phase 2.1 — Zotero Connector: basic save workflow
 
@@ -110,10 +111,13 @@ translators:
 
 ```text
 anchor_server/
-  data/translators/       # bundled or synced Zotero translator files
   services/
     translator_service.py # scan translator files, serve metadata and code
+    translator_sync.py    # fetch/update translators from the Zotero repo
 ```
+
+Translator files live under `ANCHOR_TRANSLATORS_DIR` (default
+`./data/translators/`).
 
 `/connector/getTranslators` returns translator metadata; `/connector/getTranslatorCode`
 returns the JavaScript source. `ping` includes `translatorsHash` for incremental
@@ -126,19 +130,20 @@ frontend/
   package.json
   vite.config.ts
   src/
-    api/           # generated or hand-written API client
+    services/      # API client (relative /api/v1 paths, vite proxy in dev)
     components/
-    layouts/
+    composables/
     router/
-    stores/
+    utils/
     views/
       LibraryView.vue
-      ItemDetailView.vue
-      SettingsView.vue
+      ItemView.vue
 ```
 
 The frontend consumes the same public API as scripts. The Zotero Connector uses
-its own `/connector/*` namespace.
+its own `/connector/*` namespace. When `ANCHOR_FRONTEND_DIST_DIR` contains a
+built `index.html`, the backend serves the SPA at `/` with fallback to
+`index.html` for unknown paths.
 
 ### Phase 4 — Product polish
 
@@ -146,14 +151,14 @@ Add authentication, soft deletes, and schema fields needed for future sync:
 
 ```text
 anchor_server/
-  core/
-    security.py
-  models/
-    note.py
+  api/routes/        # auth dependencies wired into existing routers
+  models/            # add Note table (models stay in the flat models.py today)
+  services/          # markdown_service.py already exists for attachment text
 ```
 
-Phase 4 also adds `version` and `deleted_at` fields to syncable objects so
-future sync does not need a migration.
+Phase 4 also adds `version` and `deleted_at` fields to syncable objects. These
+are the schema foundation for multi-device sync; the full design (oplog,
+device outbox, LWW conflicts) is in [sync.md](sync.md).
 
 ## Schema Migrations
 
@@ -164,7 +169,8 @@ during development.
 
 Recommended workflow:
 
-- Migrations live in `backend/alembic/versions/`.
+- Migrations live in `backend/migrations/versions/` (`alembic.ini` at the
+  repo root points there via `script_location`).
 - The first migration creates the Phase 1 tables (`items`, `attachments`).
 - After any model change, generate a new revision with
   `alembic revision --autogenerate -m "..."`.
@@ -178,19 +184,21 @@ operations.
 
 ## Data Directory
 
-Default layout under `~/.anchor/`:
+By default everything lives relative to the working directory:
 
 ```text
-~/.anchor/
-  anchor.db
-  config.toml
-  attachments/       # Phase 1
-    ab/
-      cd/
-        {attachment-id}.pdf
+./anchor.db                 # SQLite database (ANCHOR_DATABASE_URL)
+./data/                     # ANCHOR_DATA_DIR
+  attachments/              # ANCHOR_ATTACHMENTS_DIR
+    pdfs/                   # files named from item metadata (see below)
+    others/
+  translators/              # synced Zotero translators
+  cache/markdown/           # Markdown conversion cache
 ```
 
-`ANCHOR_DATA_DIR` overrides the default path.
+Each path has its own `ANCHOR_*` override; relative paths resolve against the
+process working directory. There is no config file — all settings come from
+environment variables or `.env` (see `anchor_server/config.py`).
 
 ## Authentication
 
@@ -205,6 +213,10 @@ Authorization: Bearer <token>
 
 CORS is configurable and conservative by default.
 
+Authentication is also a hard prerequisite for exposing a central sync server
+on the public internet — sync endpoints must never run unauthenticated (see
+[sync.md](sync.md)).
+
 ## Search
 
 Phase 1 has no search; the item list endpoint only supports pagination.
@@ -214,12 +226,21 @@ moving to FTS5.
 
 ## Attachment Storage
 
-Attachments are stored by ID under a sharded directory. Metadata keeps the
-original filename, MIME type, size, and SHA-256 checksum. This makes future
-sync/deduplication easier.
+Attachment bytes are stored under `attachments/pdfs/` or `attachments/others/`
+(classified by content type). Filenames are rendered from item metadata with a
+Jinja template (`ANCHOR_ATTACHMENT_NAME_TEMPLATE`, default
+`{{ year }}_{{ authors_last_names }}_{{ title_slug }}`), slugified to safe
+lowercase; the template may introduce subdirectories. Local name collisions
+get `_1`, `_2`, … suffixes.
+
+The database stores only the **relative** path under the attachments directory
+(`attachments.storage_path`), plus the rendered filename, MIME type, and size.
+Relative paths keep the database portable across machines and make the
+directory safe to synchronize with external tools such as Syncthing (see
+[sync.md](sync.md) for how multi-device sync builds on this).
 
 ## Deletion
 
 Phase 1, Phase 2.1, and Phase 2.2 use hard deletes for simplicity. Phase 4
 switches to soft deletes (`deleted_at`) for items, attachments, and notes so
-future sync can see tombstones.
+that sync can propagate tombstones across devices (see [sync.md](sync.md)).
