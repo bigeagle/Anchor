@@ -1,7 +1,14 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 
-import { api, isPdf, type Item, type SortDirection, type SortField } from '@/services/api';
+import {
+  api,
+  isPdf,
+  type Item,
+  type SortDirection,
+  type SortField,
+  type SyncStatus,
+} from '@/services/api';
 import { debounce, formatArxivId, formatAuthors, itemTypeLabel } from '@/utils/format';
 
 const PAGE_SIZE = 50;
@@ -14,6 +21,23 @@ const query = ref('');
 const orderBy = ref<SortField>('date_added');
 const sortDir = ref<SortDirection>('desc');
 const offset = ref(0);
+
+const syncStatus = ref<SyncStatus | null>(null);
+let syncTimer: ReturnType<typeof setInterval> | null = null;
+
+async function fetchSyncStatus() {
+  try {
+    syncStatus.value = await api.getSyncStatus();
+  } catch {
+    syncStatus.value = null; // older backend or offline: hide the indicator
+  }
+}
+
+function syncStatusText(status: SyncStatus): string {
+  if (status.role !== 'device') return '';
+  if (status.outbox_pending > 0) return `待推送 ${status.outbox_pending} 条`;
+  return status.last_sync_at ? `已同步 #${status.last_seq ?? 0}` : '等待首次同步';
+}
 
 const sortOptions: { value: SortField; label: string }[] = [
   { value: 'date_added', label: '添加时间' },
@@ -76,7 +100,15 @@ function htmlCount(item: Item): number {
   return item.attachments.length - pdfCount(item);
 }
 
-onMounted(fetchItems);
+onMounted(() => {
+  fetchItems();
+  fetchSyncStatus();
+  syncTimer = setInterval(fetchSyncStatus, 15000);
+});
+
+onUnmounted(() => {
+  if (syncTimer) clearInterval(syncTimer);
+});
 </script>
 
 <template>
@@ -104,6 +136,22 @@ onMounted(fetchItems);
         </div>
 
         <div class="ml-auto flex items-center gap-2 text-sm">
+          <span
+            v-if="syncStatus && syncStatus.role === 'device'"
+            :class="[
+              'rounded-full px-2.5 py-1 text-xs font-medium',
+              syncStatus.outbox_pending > 0
+                ? 'bg-amber-50 text-amber-700'
+                : 'bg-green-50 text-green-700',
+            ]"
+            :title="
+              syncStatus.last_sync_at
+                ? `上次同步：${new Date(syncStatus.last_sync_at).toLocaleString()}`
+                : '尚未同步'
+            "
+          >
+            ⇄ {{ syncStatusText(syncStatus) }}
+          </span>
           <span class="text-gray-500">排序</span>
           <select
             v-model="orderBy"

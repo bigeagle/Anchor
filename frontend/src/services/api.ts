@@ -20,6 +20,11 @@ export interface Attachment {
   size: number;
   storage_path: string;
   date_added: string;
+  version: number;
+  /** Whether the file exists locally yet (Syncthing may still deliver it). */
+  available: boolean;
+  /** Local file size differs from metadata — possible Syncthing name collision. */
+  size_mismatch: boolean;
   /** Relative download URL returned by the backend, e.g. /attachments/{id}. */
   href: string;
 }
@@ -43,7 +48,18 @@ export interface Item {
   extra: Record<string, unknown>;
   date_added: string;
   date_modified: string;
+  version: number;
   attachments: Attachment[];
+}
+
+/** Local sync state reported by GET /api/v1/sync/status. */
+export interface SyncStatus {
+  role: 'standalone' | 'central' | 'device';
+  device_id: string | null;
+  last_seq: number | null;
+  last_sync_at: string | null;
+  outbox_pending: number;
+  central_url: string | null;
 }
 
 export type SortField =
@@ -93,10 +109,15 @@ export const api = {
   attachmentFileUrl(attachmentId: string): string {
     return `${API_BASE}/attachments/${attachmentId}`;
   },
+
+  getSyncStatus(): Promise<SyncStatus> {
+    return getJson<SyncStatus>(`${API_BASE}/sync/status`);
+  },
 };
 
 /** Attachment content types the app can preview inline in an iframe. */
 export function isViewable(attachment: Attachment): boolean {
+  if (!attachment.available) return false;
   const ct = (attachment.content_type ?? '').toLowerCase();
   return ct === 'application/pdf' || ct.startsWith('text/html');
 }

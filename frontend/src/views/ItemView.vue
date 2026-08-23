@@ -204,8 +204,23 @@ watch(() => props.id, fetchItem);
           <div v-if="!item.attachments.length" class="mt-2 text-sm text-gray-400">无附件</div>
           <ul class="mt-2 space-y-1.5">
             <li v-for="attachment in item.attachments" :key="attachment.id">
+              <div
+                v-if="!attachment.available"
+                class="flex w-full items-center gap-2 rounded-lg border border-dashed border-gray-200 px-3 py-2 text-left text-sm text-gray-400"
+                title="文件尚未同步到本机（等待 Syncthing 送达）"
+              >
+                <span class="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-semibold text-gray-500">
+                  待同步
+                </span>
+                <span class="min-w-0 flex-1 truncate" :title="attachment.filename">
+                  {{ attachment.filename }}
+                </span>
+                <span class="shrink-0 text-xs text-gray-400">
+                  {{ formatFileSize(attachment.size) }}
+                </span>
+              </div>
               <button
-                v-if="isViewable(attachment)"
+                v-else-if="isViewable(attachment)"
                 :class="[
                   'flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors',
                   activeAttachmentId === attachment.id
@@ -225,6 +240,12 @@ watch(() => props.id, fetchItem);
                 <span class="min-w-0 flex-1 truncate" :title="attachment.filename">
                   {{ attachment.filename }}
                 </span>
+                <span
+                  v-if="attachment.size_mismatch"
+                  class="shrink-0 text-xs text-amber-600"
+                  title="本地文件大小与元数据不一致，可能是 Syncthing 同名冲突"
+                  >⚠</span
+                >
                 <span class="shrink-0 text-xs text-gray-400">
                   {{ formatFileSize(attachment.size) }}
                 </span>
@@ -245,6 +266,12 @@ watch(() => props.id, fetchItem);
                 <span class="min-w-0 flex-1 truncate" :title="attachment.filename">
                   {{ attachment.filename }}
                 </span>
+                <span
+                  v-if="attachment.size_mismatch"
+                  class="shrink-0 text-xs text-amber-600"
+                  title="本地文件大小与元数据不一致，可能是 Syncthing 同名冲突"
+                  >⚠</span
+                >
                 <span class="shrink-0 text-xs text-gray-400">下载</span>
               </a>
             </li>
