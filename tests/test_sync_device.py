@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 from anchor_server.config import settings
 from anchor_server.database import Base, get_db
 from anchor_server.main import app
-from anchor_server.models import ChangeEntry, Item, OutboxEntry
+from anchor_server.models import Attachment, ChangeEntry, Item, OutboxEntry, SyncState
 from anchor_server.services import sync_client
 from anchor_server.services.sync_service import row_to_dict
 
@@ -151,13 +151,10 @@ def test_pull_gap_bootstraps_from_snapshot(device: TestClient, db_session, centr
     settings.role = "standalone"  # predates device mode: no outbox entry
     zombie = Item(title="Stale Local Only", item_type="book")
     db_session.add(zombie)
+    # The device synced before (state row exists), so no backfill happens.
+    db_session.add(SyncState(id=1, device_id="dev-stale", last_seq=2))
     db_session.commit()
     settings.role = "device"
-
-    # Pretend the device once synced up to seq 2, but central trimmed history.
-    state = sync_client.get_sync_state(db_session)
-    state.last_seq = 2
-    db_session.commit()
 
     live_id = uuid.uuid4()
 
@@ -188,3 +185,27 @@ def test_pull_gap_bootstraps_from_snapshot(device: TestClient, db_session, centr
     assert sync_client.get_sync_state(db_session).last_seq == 6
     # Nothing was recorded into the outbox while applying the snapshot.
     assert db_session.query(OutboxEntry).count() == 0
+
+
+def test_first_sync_uploads_standalone_library(device: TestClient, db_session, central):
+    """Data from the standalone era is backfilled and pushed on first sync."""
+    # Library accumulated while running standalone: no outbox entries.
+    settings.role = "standalone"
+    created = device.post("/api/v1/items/", json={"title": "Old Standalone"}).json()
+    device.post(
+        f"/api/v1/items/{created['id']}/attachments",
+        files={"file": ("old.pdf", b"pdf-bytes", "application/pdf")},
+    )
+    settings.role = "device"
+    assert db_session.query(OutboxEntry).count() == 0
+
+    # Becoming a device backfills everything; sync_once uploads it.
+    sync_client.sync_once(db_session, central)
+
+    assert db_session.query(OutboxEntry).count() == 0
+    item = central.central_session.get(Item, uuid.UUID(created["id"]))
+    assert item is not None and item.title == "Old Standalone"
+    assert (
+        central.central_session.query(Attachment).filter_by(item_id=item.id).count()
+        == 1
+    )

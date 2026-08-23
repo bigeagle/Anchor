@@ -64,13 +64,40 @@ for _model in (Item, Attachment):
 
 
 def get_sync_state(db: Session) -> SyncState:
-    """Return the single sync_state row, creating it (with device id) once."""
+    """Return the single sync_state row, creating it (with device id) once.
+
+    Creating the row means this machine just became a device: any library
+    data from its standalone days is backfilled into the outbox so the first
+    sync uploads it to the central server.
+    """
     state = db.get(SyncState, 1)
     if state is None:
         state = SyncState(id=1, device_id=str(uuid.uuid4()), last_seq=0)
         db.add(state)
+        _backfill_outbox(db)
         db.commit()
     return state
+
+
+def _backfill_outbox(db: Session) -> None:
+    """Enqueue all pre-existing live rows for a one-time upload.
+
+    Rows already pending in the outbox are skipped so the first sync does
+    not push duplicates.
+    """
+    pending = {(e.object_type, e.object_id) for e in db.query(OutboxEntry).all()}
+    for object_type, model in (("item", Item), ("attachment", Attachment)):
+        for obj in db.query(model).filter(model.deleted_at.is_(None)).all():
+            if (object_type, obj.id) in pending:
+                continue
+            db.add(
+                OutboxEntry(
+                    object_type=object_type,
+                    object_id=obj.id,
+                    op="upsert",
+                    payload=row_to_dict(obj),
+                )
+            )
 
 
 def make_http() -> httpx.Client:
@@ -87,10 +114,10 @@ def make_http() -> httpx.Client:
 
 def push_pending(db: Session, http: httpx.Client) -> int:
     """Push all pending outbox entries; delete them once acknowledged."""
+    state = get_sync_state(db)  # first call backfills the standalone library
     entries = db.query(OutboxEntry).order_by(OutboxEntry.id).all()
     if not entries:
         return 0
-    state = get_sync_state(db)
     body = {
         "device_id": state.device_id,
         "changes": [

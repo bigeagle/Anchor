@@ -130,6 +130,10 @@ central applied last wins, and overwritten values remain visible in the log.
 - A `410 Gone` from `changes` means the local cursor fell behind retained
   oplog history: the device fetches a fresh snapshot, replaces its library
   state, and adopts the snapshot's `seq`.
+- **First activation on a machine that ran standalone:** when the
+  `sync_state` row is first created, all pre-existing live rows are
+  backfilled into the outbox (skipping rows already pending), so the first
+  sync uploads the whole standalone-era library to the central server.
 
 All writes — public API, Zotero Connector (`/connector/*`), and frontend —
 flow through the same service/repository layer, so the outbox hook lives
