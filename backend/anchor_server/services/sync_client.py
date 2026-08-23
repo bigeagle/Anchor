@@ -141,6 +141,12 @@ def push_pending(db: Session, http: httpx.Client) -> int:
 def _apply_entries(db: Session, changes: list[dict]) -> None:
     for change in changes:
         apply_change(db, ChangeIn(**change))
+        logger.debug(
+            "applied %s %s (%s)",
+            change["op"],
+            change["object_type"],
+            change["object_id"],
+        )
 
 
 def pull_changes(db: Session, http: httpx.Client) -> int:
@@ -153,6 +159,10 @@ def pull_changes(db: Session, http: httpx.Client) -> int:
     state = get_sync_state(db)
     response = http.get("/api/v1/sync/changes", params={"since": state.last_seq})
     if response.status_code == 410:
+        logger.warning(
+            "cursor %d fell behind retained oplog history; re-bootstrapping",
+            state.last_seq,
+        )
         bootstrap(db, http)
         return -1
     response.raise_for_status()
@@ -161,6 +171,7 @@ def pull_changes(db: Session, http: httpx.Client) -> int:
     token = _applying_remote.set(True)
     try:
         _apply_entries(db, data["changes"])
+        previous = state.last_seq
         state.last_seq = data["latest_seq"]
         state.last_sync_at = utc_now()
         db.commit()
@@ -169,6 +180,13 @@ def pull_changes(db: Session, http: httpx.Client) -> int:
         raise
     finally:
         _applying_remote.reset(token)
+    if data["changes"]:
+        logger.info(
+            "pulled %d change(s) from central (cursor %d -> %d)",
+            len(data["changes"]),
+            previous,
+            state.last_seq,
+        )
     return len(data["changes"])
 
 
@@ -214,6 +232,12 @@ def bootstrap(db: Session, http: httpx.Client) -> None:
         state.last_seq = data["seq"]
         state.last_sync_at = now
         db.commit()
+        logger.info(
+            "bootstrapped from snapshot: %d item(s), %d attachment(s), cursor -> %d",
+            len(data["items"]),
+            len(data["attachments"]),
+            data["seq"],
+        )
     except Exception:
         db.rollback()
         raise
@@ -230,6 +254,11 @@ def sync_once(db: Session, http: httpx.Client) -> None:
 async def sync_loop() -> None:
     """Background task: push promptly on local writes, poll on the interval."""
     http = make_http()
+    logger.info(
+        "sync loop started: central=%s, pull interval=%ds",
+        settings.central_url,
+        settings.sync_interval,
+    )
     last_pull = 0.0
     while True:
         try:
@@ -237,7 +266,7 @@ async def sync_loop() -> None:
             if pulled:
                 last_pull = time.monotonic()
             if pushed:
-                logger.debug("pushed %d change(s) to central", pushed)
+                logger.info("pushed %d change(s) to central", pushed)
         except Exception:
             logger.exception("sync iteration failed; will retry")
         await asyncio.sleep(5)

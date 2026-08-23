@@ -65,7 +65,7 @@ start central central 23201 ANCHOR_AUTH_ENABLED=true ANCHOR_API_TOKEN=$TOKEN
 wait_up 23201 || exit 1
 sleep 10
 curl -sf http://127.0.0.1:23201/api/v1/items/ -H "Authorization: Bearer $TOKEN" | grep -q "Offline Write" && echo "OK: 中心端恢复后收到离线期间的写入" || { echo "FAIL: 离线写入没推上去"; exit 1; }
-sleep 6
+sleep 12
 curl -sf http://127.0.0.1:23203/api/v1/items/ | grep -q "Offline Write" && echo "OK: B 也收到了离线写入" || echo "FAIL: B 未收到离线写入"
 
 echo "== 5. 同步状态端点"

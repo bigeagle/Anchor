@@ -19,6 +19,11 @@ from anchor_server.services import sync_client  # noqa: F401  (registers outbox 
 
 logger = logging.getLogger(__name__)
 
+logging.basicConfig(
+    level=settings.log_level.upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:

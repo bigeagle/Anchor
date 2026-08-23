@@ -10,6 +10,15 @@ from anchor_server.database import Base, get_db
 from anchor_server.main import app
 
 
+@pytest.fixture(autouse=True)
+def _default_settings(monkeypatch):
+    """Isolate tests from the developer's real .env (role, auth, sync)."""
+    monkeypatch.setattr(settings, "role", "standalone")
+    monkeypatch.setattr(settings, "auth_enabled", False)
+    monkeypatch.setattr(settings, "central_url", None)
+    monkeypatch.setattr(settings, "sync_token", None)
+
+
 @pytest.fixture
 def engine():
     """Create an isolated in-memory SQLite engine and tables for each test."""
