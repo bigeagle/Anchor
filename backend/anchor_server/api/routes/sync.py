@@ -38,15 +38,21 @@ def push(payload: PushRequest, db: Session = Depends(get_db)) -> PushResponse:
     dependencies=[Depends(require_central_role)],
 )
 def changes(
-    since: int = Query(0, ge=0), db: Session = Depends(get_db)
+    since: int = Query(0, ge=0),
+    checksum: str | None = Query(None),
+    db: Session = Depends(get_db),
 ) -> ChangesResponse:
     """Return oplog entries newer than the device cursor.
 
-    Responds 410 when the cursor fell behind retained history; the device
-    must then re-bootstrap from a snapshot.
+    Responds 410 when the cursor fell behind retained history (device
+    re-bootstraps from a snapshot) and 409 when the cursor does not match
+    this oplog chain (wrong central or rolled-back oplog; the device halts
+    and waits for manual re-anchoring).
     """
     try:
-        entries, latest = sync_service.changes_since(db, since)
+        entries, latest = sync_service.changes_since(db, since, checksum)
+    except sync_service.CursorMismatchError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except sync_service.OplogGapError as exc:
         raise HTTPException(status_code=410, detail=str(exc)) from exc
     return ChangesResponse(
@@ -58,6 +64,7 @@ def changes(
                 "op": e.op,
                 "payload": e.payload,
                 "origin_device": e.origin_device,
+                "checksum": e.checksum,
                 "created_at": e.created_at,
             }
             for e in entries
@@ -87,5 +94,6 @@ def status(db: Session = Depends(get_db)) -> SyncStatusOut:
         out.device_id = state.device_id
         out.last_seq = state.last_seq
         out.last_sync_at = state.last_sync_at
+        out.sync_error = state.last_error
     out.outbox_pending = db.query(OutboxEntry).count()
     return out

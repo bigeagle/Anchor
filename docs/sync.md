@@ -71,19 +71,41 @@ The central server keeps a `changes` table (oplog):
 | `op`            | `upsert` / `delete`                         |
 | `payload`       | full object snapshot                        |
 | `origin_device` | device id that pushed the change            |
+| `checksum`      | chained hash (see below)                    |
 | `created_at`    | server timestamp                            |
+
+### Chain checksums
+
+A bare `seq` cursor cannot distinguish "no news" from "this is a different
+oplog" — pointing a device at another central (or restoring the central from
+a backup) would silently diverge. To prevent that, each entry's `checksum`
+chains it to its predecessor:
+
+```text
+checksum(seq) = sha256(checksum(seq-1) + "|" + canonical_json(entry))
+checksum(0)   = instance_id          -- random UUID stored in sync_meta
+```
+
+Every central generates its own `instance_id` on first use, so two centrals
+always produce different chains.
 
 Endpoints (all under `/api/v1/sync`, token-authenticated):
 
 - `POST /push` — device uploads a batch of local changes. Central applies
   them to its own tables and appends oplog entries.
-- `GET /changes?since=<seq>` — returns oplog entries newer than the cursor.
-  Devices apply them idempotently (upsert by primary key; delete = set
-  `deleted_at`). If `since` is older than the oldest retained oplog entry,
-  respond `410 Gone` so the device falls back to a full snapshot.
+- `GET /changes?since=<seq>&checksum=<hash>` — returns oplog entries newer
+  than the cursor. Devices apply them idempotently (upsert by primary key;
+  delete = set `deleted_at`). Error responses:
+  - `410 Gone` — the cursor is inside the head but older than retained
+    history. The device re-bootstraps from a snapshot automatically.
+  - `409 Conflict` — the cursor does not match this chain (checksum mismatch
+    at `seq`, or `seq` beyond the head: wrong central, or the oplog was
+    rolled back). The device **halts** syncing; it must not auto-bootstrap,
+    because bootstrapping from an empty new central would tombstone the
+    whole local library.
 - `GET /snapshot` — full dump for bootstrapping a new device. The response
-  includes the `seq` the snapshot is consistent with; the device adopts it
-  as its initial cursor.
+  includes the head `(seq, checksum)` the snapshot is consistent with; the
+  device adopts them as its initial cursor.
 
 Central `seq` values are the only global ordering. Local changes carry no
 global sequence until the central server accepts them; the local outbox only
@@ -112,11 +134,13 @@ central applied last wins, and overwritten values remain visible in the log.
     id            INTEGER PRIMARY KEY CHECK (id = 1)   -- enforce single row
     device_id     UUID      -- generated once on first start
     last_seq      INTEGER   -- largest central seq applied locally
+    last_checksum TEXT      -- checksum of the entry at last_seq
     last_sync_at  DATETIME  -- last successful sync (for UI display)
+    last_error    TEXT      -- "cursor_mismatch" halts syncing (see below)
   ```
 
 - Background loop: push immediately whenever the outbox is non-empty;
-  poll `changes?since=<last_seq>` every ~30 s.
+  poll `changes?since=<last_seq>&checksum=<last_checksum>` every ~30 s.
 - Applying remote changes overwrites local state unconditionally (LWW).
 - **Cursor advancement commits in the same database transaction as the
   applied changes.** If apply crashes halfway, the cursor does not move and
@@ -129,7 +153,15 @@ central applied last wins, and overwritten values remain visible in the log.
   `version` is not ahead of local state.
 - A `410 Gone` from `changes` means the local cursor fell behind retained
   oplog history: the device fetches a fresh snapshot, replaces its library
-  state, and adopts the snapshot's `seq`.
+  state, and adopts the snapshot's `(seq, checksum)`.
+- A `409 Conflict` means the cursor does not match the central's oplog chain
+  (the device was pointed at a different central, or the central was
+  restored from an older backup). The device sets
+  `sync_state.last_error = "cursor_mismatch"` and **halts both push and
+  pull** — `/api/v1/sync/status` surfaces the error. Recovery is a manual
+  re-anchor: stop the server, delete the `sync_state` row and any stale
+  `outbox` rows, restart. The first sync then backfills and re-uploads the
+  whole library, which is exactly what migrating to a new central wants.
 - **First activation on a machine that ran standalone:** when the
   `sync_state` row is first created, all pre-existing live rows are
   backfilled into the outbox (skipping rows already pending), so the first

@@ -11,6 +11,7 @@ import contextvars
 import logging
 import time
 import uuid
+from typing import Any
 
 import httpx
 from sqlalchemy import event
@@ -112,8 +113,21 @@ def make_http() -> httpx.Client:
     )
 
 
+def is_halted(db: Session) -> bool:
+    """True when syncing has halted after a cursor mismatch.
+
+    Halting requires manual re-anchoring: stop the server, delete the
+    sync_state row (and any outbox rows), restart. The first sync then
+    re-uploads the whole library to the (new) central.
+    """
+    state = db.get(SyncState, 1)
+    return state is not None and state.last_error is not None
+
+
 def push_pending(db: Session, http: httpx.Client) -> int:
     """Push all pending outbox entries; delete them once acknowledged."""
+    if is_halted(db):
+        return 0
     state = get_sync_state(db)  # first call backfills the standalone library
     entries = db.query(OutboxEntry).order_by(OutboxEntry.id).all()
     if not entries:
@@ -155,9 +169,32 @@ def pull_changes(db: Session, http: httpx.Client) -> int:
     The cursor advances in the same transaction as the applied changes, so a
     crash mid-apply simply re-fetches the same entries (apply is idempotent).
     A 410 means the cursor fell behind retained history: re-bootstrap.
+    A 409 means the oplog chain does not match (wrong central or rolled-back
+    oplog): halt syncing and wait for manual re-anchoring — auto-bootstrapping
+    here could wipe the local library if the new central is empty.
     """
+    if is_halted(db):
+        return 0
     state = get_sync_state(db)
-    response = http.get("/api/v1/sync/changes", params={"since": state.last_seq})
+    if state.last_seq and state.last_checksum is None:
+        # Legacy cursor from before checksums existed: cannot be verified,
+        # so re-bootstrap once to adopt a verifiable (seq, checksum) pair.
+        bootstrap(db, http)
+        return -1
+    params: dict[str, Any] = {"since": state.last_seq}
+    if state.last_checksum:
+        params["checksum"] = state.last_checksum
+    response = http.get("/api/v1/sync/changes", params=params)
+    if response.status_code == 409:
+        state.last_error = "cursor_mismatch"
+        db.commit()
+        logger.error(
+            "central rejected the sync cursor (seq=%d): %s. Syncing is halted; "
+            "delete the sync_state row and restart to re-anchor this device.",
+            state.last_seq,
+            response.json().get("detail", response.text),
+        )
+        return -2
     if response.status_code == 410:
         logger.warning(
             "cursor %d fell behind retained oplog history; re-bootstrapping",
@@ -173,6 +210,8 @@ def pull_changes(db: Session, http: httpx.Client) -> int:
         _apply_entries(db, data["changes"])
         previous = state.last_seq
         state.last_seq = data["latest_seq"]
+        if data["changes"]:
+            state.last_checksum = data["changes"][-1]["checksum"]
         state.last_sync_at = utc_now()
         db.commit()
     except Exception:
@@ -230,7 +269,9 @@ def bootstrap(db: Session, http: httpx.Client) -> None:
 
         state = get_sync_state(db)
         state.last_seq = data["seq"]
+        state.last_checksum = data["checksum"]
         state.last_sync_at = now
+        state.last_error = None
         db.commit()
         logger.info(
             "bootstrapped from snapshot: %d item(s), %d attachment(s), cursor -> %d",

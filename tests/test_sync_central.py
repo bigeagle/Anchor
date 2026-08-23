@@ -237,3 +237,77 @@ def test_snapshot_bootstrap(central: TestClient, db_session):
     assert [i["title"] for i in data["items"]] == ["Live"]
     assert len(data["attachments"]) == 1
     assert data["attachments"][0]["storage_path"] == "pdfs/paper.pdf"
+
+
+def test_pushed_entries_carry_chained_checksums(central: TestClient):
+    """Each oplog entry chains to its predecessor; chains differ per central."""
+    for _ in range(2):
+        _push(
+            central,
+            [
+                {
+                    "object_type": "item",
+                    "object_id": str(uuid.uuid4()),
+                    "op": "upsert",
+                    "payload": _item_payload(uuid.uuid4()),
+                }
+            ],
+        )
+    data = central.get("/api/v1/sync/changes?since=0").json()
+    checksums = [c["checksum"] for c in data["changes"]]
+    assert len(checksums) == 2
+    assert len(set(checksums)) == 2
+    assert all(len(c) == 64 for c in checksums)
+
+
+def test_cursor_checksum_verification(central: TestClient):
+    """The central validates the (seq, checksum) cursor before serving."""
+    _push(
+        central,
+        [
+            {
+                "object_type": "item",
+                "object_id": str(uuid.uuid4()),
+                "op": "upsert",
+                "payload": _item_payload(uuid.uuid4()),
+            }
+        ],
+    )
+    data = central.get("/api/v1/sync/changes?since=0").json()
+    good = data["changes"][0]["checksum"]
+
+    # Correct cursor: fine.
+    response = central.get(f"/api/v1/sync/changes?since=1&checksum={good}")
+    assert response.status_code == 200
+
+    # Wrong checksum at an existing seq: different chain -> 409.
+    response = central.get(f"/api/v1/sync/changes?since=1&checksum={'0' * 64}")
+    assert response.status_code == 409
+
+    # Cursor beyond the head: rolled-back or wrong central -> 409.
+    response = central.get(f"/api/v1/sync/changes?since=99&checksum={good}")
+    assert response.status_code == 409
+
+
+def test_snapshot_includes_head_checksum(central: TestClient):
+    """Snapshots carry the oplog head checksum for the device cursor."""
+    empty = central.get("/api/v1/sync/snapshot").json()
+    assert empty["seq"] == 0
+    # Empty oplog: the cursor anchors at the instance id (a UUID), not a hash.
+    assert empty["checksum"]  # non-empty chain anchor
+
+    _push(
+        central,
+        [
+            {
+                "object_type": "item",
+                "object_id": str(uuid.uuid4()),
+                "op": "upsert",
+                "payload": _item_payload(uuid.uuid4()),
+            }
+        ],
+    )
+    snap = central.get("/api/v1/sync/snapshot").json()
+    head = central.get("/api/v1/sync/changes?since=0").json()["changes"][-1]
+    assert snap["seq"] == 1
+    assert snap["checksum"] == head["checksum"]

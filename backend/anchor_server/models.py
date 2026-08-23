@@ -104,10 +104,12 @@ class OutboxEntry(Base):
 
 
 class SyncState(Base):
-    """Single-row device sync state: identity and pull cursor.
+    """Single-row device sync state: identity, pull cursor, and halt flag.
 
-    The pull cursor (`last_seq`) must commit in the same transaction as the
-    applied changes, so it lives in the same database, not a state file.
+    The pull cursor (`last_seq`, `last_checksum`) must commit in the same
+    transaction as the applied changes, so it lives in the same database,
+    not a state file. `last_error` set to "cursor_mismatch" halts syncing
+    until the row is deleted (manual re-anchor).
     """
 
     __tablename__ = "sync_state"
@@ -115,7 +117,18 @@ class SyncState(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)  # always 1
     device_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     last_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_sync_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class SyncMeta(Base):
+    """Single-row central metadata: the instance id anchoring the oplog chain."""
+
+    __tablename__ = "sync_meta"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # always 1
+    instance_id: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
 class ChangeEntry(Base):
@@ -123,6 +136,9 @@ class ChangeEntry(Base):
 
     ``seq`` is the global ordering assigned by the central server; devices
     pull entries newer than their local cursor and apply them idempotently.
+    ``checksum`` chains each entry to its predecessor (and the first entry to
+    the central's ``instance_id``), letting devices verify they are following
+    the same oplog chain before applying an increment.
     """
 
     __tablename__ = "changes"
@@ -135,6 +151,7 @@ class ChangeEntry(Base):
     op: Mapped[str] = mapped_column(String(16), nullable=False)  # upsert | delete
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     origin_device: Mapped[str] = mapped_column(String(64), nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(default=utc_now)
 
 

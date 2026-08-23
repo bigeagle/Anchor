@@ -38,6 +38,7 @@ class ChangeOut(ChangeIn):
 
     seq: int
     origin_device: str
+    checksum: str
     created_at: datetime
 
 
@@ -51,11 +52,12 @@ class ChangesResponse(BaseModel):
 class SnapshotResponse(BaseModel):
     """Full library dump for bootstrapping a device.
 
-    ``seq`` is the oplog head the snapshot is consistent with; the device
-    adopts it as its initial cursor.
+    ``seq`` and ``checksum`` identify the oplog head the snapshot is
+    consistent with; the device adopts them as its initial cursor.
     """
 
     seq: int
+    checksum: str
     items: list[dict[str, Any]]
     attachments: list[dict[str, Any]]
 
@@ -69,3 +71,4 @@ class SyncStatusOut(BaseModel):
     last_sync_at: datetime | None = None
     outbox_pending: int = 0
     central_url: str | None = None
+    sync_error: str | None = None

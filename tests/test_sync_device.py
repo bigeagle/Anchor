@@ -13,7 +13,8 @@ from anchor_server.config import settings
 from anchor_server.database import Base, get_db
 from anchor_server.main import app
 from anchor_server.models import Attachment, ChangeEntry, Item, OutboxEntry, SyncState
-from anchor_server.services import sync_client
+from anchor_server.schemas.sync import ChangeIn
+from anchor_server.services import sync_client, sync_service
 from anchor_server.services.sync_service import row_to_dict
 
 
@@ -209,3 +210,83 @@ def test_first_sync_uploads_standalone_library(device: TestClient, db_session, c
         central.central_session.query(Attachment).filter_by(item_id=item.id).count()
         == 1
     )
+
+
+def test_cursor_mismatch_halts_sync(device: TestClient, db_session, central):
+    """Pointing a device at a different central halts syncing with an error."""
+    # Sync once against the original central to establish a verified cursor.
+    device.post("/api/v1/items/", json={"title": "Anchored on A"})
+    sync_client.sync_once(db_session, central)
+    state = sync_client.get_sync_state(db_session)
+    assert state.last_seq == 1
+    assert state.last_checksum is not None
+
+    # A different central with its own chain (different instance id).
+    other_engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(other_engine)
+    other_session = sessionmaker(bind=other_engine)()
+    central_b = CentralHarness(other_session)
+
+    def seed_b():
+        # Give central B a seq=1 entry that cannot match A's chain.
+        item = Item(title="Born on B", item_type="book")
+        other_session.add(item)
+        other_session.flush()
+        sync_service.push_changes(
+            other_session,
+            "device-x",
+            [
+                ChangeIn(
+                    object_type="item",
+                    object_id=item.id,
+                    op="upsert",
+                    payload=row_to_dict(item),
+                )
+            ],
+        )
+
+    central_b.as_central(seed_b)
+
+    # The pull is rejected and the device halts instead of diverging.
+    assert sync_client.pull_changes(db_session, central_b) == -2
+    state = sync_client.get_sync_state(db_session)
+    assert state.last_error == "cursor_mismatch"
+
+    # While halted, sync rounds are no-ops: nothing pushed, nothing pulled.
+    device.post("/api/v1/items/", json={"title": "Written While Halted"})
+    sync_client.sync_once(db_session, central_b)
+    assert db_session.query(OutboxEntry).count() == 1  # still pending
+    assert (
+        other_session.query(Item).filter_by(title="Written While Halted").count() == 0
+    )
+
+    # Manual re-anchor: delete the sync_state row (and stale outbox entries),
+    # and the next sync re-uploads the library to the new central.
+    db_session.delete(state)
+    db_session.query(OutboxEntry).delete()
+    db_session.commit()
+    sync_client.sync_once(db_session, central_b)
+
+    db_session.expire_all()
+    assert sync_client.get_sync_state(db_session).last_error is None
+    assert (
+        other_session.query(Item).filter_by(title="Written While Halted").count() == 1
+    )
+    assert other_session.query(Item).filter_by(title="Anchored on A").count() == 1
+    other_session.close()
+
+
+def test_status_reports_sync_error(device: TestClient, db_session):
+    """A halted device surfaces the error through /sync/status."""
+    db_session.add(
+        SyncState(
+            id=1, device_id="dev-halted", last_seq=7, last_error="cursor_mismatch"
+        )
+    )
+    db_session.commit()
+    data = device.get("/api/v1/sync/status").json()
+    assert data["sync_error"] == "cursor_mismatch"
