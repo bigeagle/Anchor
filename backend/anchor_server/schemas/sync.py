@@ -6,6 +6,13 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+# Bump on any incompatible change to the sync protocol or synced schema.
+# 1 = initial oplog protocol; 2 = chained checksums + 409/410 semantics.
+SYNC_PROTOCOL_VERSION = 2
+
+# Header devices send on every sync request; the central rejects mismatches.
+SYNC_PROTOCOL_HEADER = "X-Anchor-Sync-Protocol"
+
 ObjectType = Literal["item", "attachment"]
 Op = Literal["upsert", "delete"]
 
@@ -66,6 +73,7 @@ class SyncStatusOut(BaseModel):
     """Local sync state for the UI (available on any role)."""
 
     role: str
+    protocol_version: int = SYNC_PROTOCOL_VERSION
     device_id: str | None = None
     last_seq: int | None = None
     last_sync_at: datetime | None = None

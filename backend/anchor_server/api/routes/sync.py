@@ -1,10 +1,11 @@
 """Sync endpoints, mounted only on the central server (docs/sync.md)."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from anchor_server.config import settings
 from anchor_server.database import get_db
+from anchor_server.schemas import sync as sync_schemas
 from anchor_server.schemas.sync import (
     ChangesResponse,
     PushRequest,
@@ -23,9 +24,26 @@ def require_central_role() -> None:
         raise HTTPException(status_code=404, detail="Not found")
 
 
-@router.post(
-    "/push", response_model=PushResponse, dependencies=[Depends(require_central_role)]
-)
+def require_protocol_version(
+    x_anchor_sync_protocol: str | None = Header(default=None),
+) -> None:
+    """Reject devices speaking a different sync protocol version."""
+    expected = str(sync_schemas.SYNC_PROTOCOL_VERSION)
+    if x_anchor_sync_protocol != expected:
+        raise HTTPException(
+            status_code=426,
+            detail=(
+                f"protocol version mismatch: central speaks {expected}, "
+                f"device sent {x_anchor_sync_protocol or 'none'}; "
+                "upgrade the out-of-date side"
+            ),
+        )
+
+
+_sync_gates = [Depends(require_central_role), Depends(require_protocol_version)]
+
+
+@router.post("/push", response_model=PushResponse, dependencies=_sync_gates)
 def push(payload: PushRequest, db: Session = Depends(get_db)) -> PushResponse:
     """Apply a batch of device changes and append them to the oplog."""
     latest = sync_service.push_changes(db, payload.device_id, payload.changes)
@@ -35,7 +53,7 @@ def push(payload: PushRequest, db: Session = Depends(get_db)) -> PushResponse:
 @router.get(
     "/changes",
     response_model=ChangesResponse,
-    dependencies=[Depends(require_central_role)],
+    dependencies=_sync_gates,
 )
 def changes(
     since: int = Query(0, ge=0),
@@ -76,7 +94,7 @@ def changes(
 @router.get(
     "/snapshot",
     response_model=SnapshotResponse,
-    dependencies=[Depends(require_central_role)],
+    dependencies=_sync_gates,
 )
 def get_snapshot(db: Session = Depends(get_db)) -> SnapshotResponse:
     """Full library dump for bootstrapping a new or stale device."""

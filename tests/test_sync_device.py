@@ -13,9 +13,15 @@ from anchor_server.config import settings
 from anchor_server.database import Base, get_db
 from anchor_server.main import app
 from anchor_server.models import Attachment, ChangeEntry, Item, OutboxEntry, SyncState
-from anchor_server.schemas.sync import ChangeIn
+from anchor_server.schemas.sync import (
+    SYNC_PROTOCOL_HEADER,
+    SYNC_PROTOCOL_VERSION,
+    ChangeIn,
+)
 from anchor_server.services import sync_client, sync_service
 from anchor_server.services.sync_service import row_to_dict
+
+PROTO = {SYNC_PROTOCOL_HEADER: str(SYNC_PROTOCOL_VERSION)}
 
 
 class CentralHarness:
@@ -51,9 +57,11 @@ class CentralHarness:
                 app.dependency_overrides.pop(get_db, None)
 
     def post(self, *args, **kwargs):
+        kwargs["headers"] = {**PROTO, **kwargs.get("headers", {})}
         return self.as_central(lambda: asyncio.run(self._http.post(*args, **kwargs)))
 
     def get(self, *args, **kwargs):
+        kwargs["headers"] = {**PROTO, **kwargs.get("headers", {})}
         return self.as_central(lambda: asyncio.run(self._http.get(*args, **kwargs)))
 
 
@@ -290,3 +298,46 @@ def test_status_reports_sync_error(device: TestClient, db_session):
     db_session.commit()
     data = device.get("/api/v1/sync/status").json()
     assert data["sync_error"] == "cursor_mismatch"
+
+
+class OldCentralStub:
+    """Simulates a pre-protocol-version central: status without the field."""
+
+    def get(self, url, **kwargs):
+        assert url == "/api/v1/sync/status"
+        return httpx.Response(
+            200,
+            json={"role": "central"},
+            request=httpx.Request("GET", f"http://central{url}"),
+        )
+
+
+def test_device_halts_on_old_central(device: TestClient, db_session):
+    """A central that does not report the current protocol halts the device."""
+    device.post("/api/v1/items/", json={"title": "Pending Push"})
+
+    assert sync_client.pull_changes(db_session, OldCentralStub()) == -2
+    state = sync_client.get_sync_state(db_session)
+    assert state.last_error == "protocol_mismatch"
+
+    # Pushing is halted too: the outbox entry stays put.
+    assert sync_client.push_pending(db_session, OldCentralStub()) == 0
+    assert db_session.query(OutboxEntry).count() == 1
+
+    # The UI can see what happened.
+    assert device.get("/api/v1/sync/status").json()["sync_error"] == "protocol_mismatch"
+
+
+def test_device_rejects_non_central_url(device: TestClient, db_session):
+    """Pointing ANCHOR_CENTRAL_URL at a non-central Anchor halts the device."""
+
+    class NotCentralStub:
+        def get(self, url, **kwargs):
+            return httpx.Response(
+                200,
+                json={"role": "device", "protocol_version": SYNC_PROTOCOL_VERSION},
+                request=httpx.Request("GET", f"http://x{url}"),
+            )
+
+    assert sync_client.pull_changes(db_session, NotCentralStub()) == -2
+    assert sync_client.get_sync_state(db_session).last_error == "not_a_central"

@@ -8,13 +8,33 @@ from fastapi.testclient import TestClient
 
 from anchor_server.config import settings
 from anchor_server.models import Attachment, Item
+from anchor_server.schemas.sync import SYNC_PROTOCOL_HEADER, SYNC_PROTOCOL_VERSION
+
+PROTO = {SYNC_PROTOCOL_HEADER: str(SYNC_PROTOCOL_VERSION)}
+
+
+class SyncClient:
+    """TestClient wrapper that speaks the current sync protocol version."""
+
+    def __init__(self, client: TestClient):
+        self._client = client
+
+    def _with_proto(self, kwargs):
+        kwargs["headers"] = {**PROTO, **kwargs.get("headers", {})}
+        return kwargs
+
+    def get(self, url, **kwargs):
+        return self._client.get(url, **self._with_proto(kwargs))
+
+    def post(self, url, **kwargs):
+        return self._client.post(url, **self._with_proto(kwargs))
 
 
 @pytest.fixture
 def central(client: TestClient, monkeypatch):
-    """Run the app in central role."""
+    """Run the app in central role, speaking the current sync protocol."""
     monkeypatch.setattr(settings, "role", "central")
-    return client
+    return SyncClient(client)
 
 
 def _item_payload(item_id: uuid.UUID, **overrides) -> dict:
@@ -311,3 +331,33 @@ def test_snapshot_includes_head_checksum(central: TestClient):
     head = central.get("/api/v1/sync/changes?since=0").json()["changes"][-1]
     assert snap["seq"] == 1
     assert snap["checksum"] == head["checksum"]
+
+
+def test_protocol_version_required(client: TestClient, monkeypatch):
+    """Central rejects sync calls without or with a wrong protocol header."""
+    monkeypatch.setattr(settings, "role", "central")
+
+    # No header at all (an old device).
+    assert (
+        client.post(
+            "/api/v1/sync/push", json={"device_id": "d", "changes": []}
+        ).status_code
+        == 426
+    )
+    assert client.get("/api/v1/sync/changes").status_code == 426
+    assert client.get("/api/v1/sync/snapshot").status_code == 426
+
+    # Wrong version.
+    stale = {SYNC_PROTOCOL_HEADER: str(SYNC_PROTOCOL_VERSION - 1)}
+    response = client.get("/api/v1/sync/changes", headers=stale)
+    assert response.status_code == 426
+    assert "protocol version mismatch" in response.json()["detail"]
+
+    # Current version passes.
+    assert client.get("/api/v1/sync/changes", headers=PROTO).status_code == 200
+
+
+def test_status_reports_protocol_version(client: TestClient):
+    """Devices pre-flight the central via /sync/status; it must name the version."""
+    data = client.get("/api/v1/sync/status").json()
+    assert data["protocol_version"] == SYNC_PROTOCOL_VERSION

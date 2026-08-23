@@ -111,6 +111,24 @@ Central `seq` values are the only global ordering. Local changes carry no
 global sequence until the central server accepts them; the local outbox only
 needs a local autoincrement id to preserve push order.
 
+### Protocol versioning
+
+`SYNC_PROTOCOL_VERSION` (in `schemas/sync.py`) must be bumped on any
+incompatible change to the sync protocol or the synced schema. Both sides
+refuse to operate across a mismatch:
+
+- Devices send `X-Anchor-Sync-Protocol: <version>` on every sync request.
+  The central answers `426 Upgrade Required` on missing/mismatched headers.
+- Before pushing or pulling, a device pre-flights `GET /sync/status` on the
+  central and checks `role == "central"` and `protocol_version`. A mismatch
+  (including an old central whose status lacks the field) halts the device
+  with `sync_state.last_error = "protocol_mismatch"`.
+
+This turns upgrade skew (one side updated, the other not) into an explicit,
+visible halt instead of undefined behavior.
+
+History: 1 = initial oplog protocol; 2 = chained checksums + 409/410/426.
+
 The oplog is also the durability backstop for LWW, so it cannot be trimmed
 blindly. Retention policy (e.g. keep 30 days or the last N entries) plus the
 `410 Gone` gap response together guarantee that a device that has been

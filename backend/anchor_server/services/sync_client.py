@@ -26,6 +26,7 @@ from anchor_server.models import (
     SyncState,
     utc_now,
 )
+from anchor_server.schemas import sync as sync_schemas
 from anchor_server.schemas.sync import ChangeIn
 from anchor_server.services.sync_service import apply_change, row_to_dict
 
@@ -105,11 +106,44 @@ def make_http() -> httpx.Client:
     """Build the HTTP client used to talk to the central server."""
     if not settings.central_url:
         raise RuntimeError("ANCHOR_CENTRAL_URL is required for device role")
-    headers = {}
+    headers = {
+        sync_schemas.SYNC_PROTOCOL_HEADER: str(sync_schemas.SYNC_PROTOCOL_VERSION)
+    }
     if settings.sync_token:
         headers["Authorization"] = f"Bearer {settings.sync_token}"
     return httpx.Client(
         base_url=settings.central_url.rstrip("/"), headers=headers, timeout=30
+    )
+
+
+def _verify_central(http: httpx.Client) -> str | None:
+    """Pre-flight the central before any sync traffic.
+
+    Returns a halt code ("protocol_mismatch" / "not_a_central") or None when
+    compatible. Network errors propagate — they are transient and the loop
+    retries them.
+    """
+    response = http.get("/api/v1/sync/status")
+    response.raise_for_status()
+    data = response.json()
+    if data.get("role") != "central":
+        return "not_a_central"
+    if data.get("protocol_version") != sync_schemas.SYNC_PROTOCOL_VERSION:
+        return "protocol_mismatch"
+    return None
+
+
+def _halt(db: Session, error: str, message: str) -> None:
+    """Stop all syncing until the deployment is fixed and the device re-anchored."""
+    state = get_sync_state(db)
+    if state.last_error == error:
+        return
+    state.last_error = error
+    db.commit()
+    logger.error(
+        "%s Syncing is halted; fix the deployment, then delete the "
+        "sync_state row and restart to re-anchor this device.",
+        message,
     )
 
 
@@ -132,6 +166,9 @@ def push_pending(db: Session, http: httpx.Client) -> int:
     entries = db.query(OutboxEntry).order_by(OutboxEntry.id).all()
     if not entries:
         return 0
+    if error := _verify_central(http):
+        _halt(db, error, f"central pre-flight failed ({error}).")
+        return 0
     body = {
         "device_id": state.device_id,
         "changes": [
@@ -145,6 +182,9 @@ def push_pending(db: Session, http: httpx.Client) -> int:
         ],
     }
     response = http.post("/api/v1/sync/push", json=body)
+    if response.status_code == 426:
+        _halt(db, "protocol_mismatch", "central rejected our protocol version.")
+        return 0
     response.raise_for_status()
     for entry in entries:
         db.delete(entry)
@@ -170,11 +210,15 @@ def pull_changes(db: Session, http: httpx.Client) -> int:
     crash mid-apply simply re-fetches the same entries (apply is idempotent).
     A 410 means the cursor fell behind retained history: re-bootstrap.
     A 409 means the oplog chain does not match (wrong central or rolled-back
-    oplog): halt syncing and wait for manual re-anchoring — auto-bootstrapping
-    here could wipe the local library if the new central is empty.
+    oplog) and a 426 means a protocol version mismatch: both halt syncing and
+    wait for manual re-anchoring — auto-bootstrapping here could wipe the
+    local library if the new central is empty.
     """
     if is_halted(db):
         return 0
+    if error := _verify_central(http):
+        _halt(db, error, f"central pre-flight failed ({error}).")
+        return -2
     state = get_sync_state(db)
     if state.last_seq and state.last_checksum is None:
         # Legacy cursor from before checksums existed: cannot be verified,
@@ -186,14 +230,15 @@ def pull_changes(db: Session, http: httpx.Client) -> int:
         params["checksum"] = state.last_checksum
     response = http.get("/api/v1/sync/changes", params=params)
     if response.status_code == 409:
-        state.last_error = "cursor_mismatch"
-        db.commit()
-        logger.error(
-            "central rejected the sync cursor (seq=%d): %s. Syncing is halted; "
-            "delete the sync_state row and restart to re-anchor this device.",
-            state.last_seq,
-            response.json().get("detail", response.text),
+        _halt(
+            db,
+            "cursor_mismatch",
+            f"central rejected the sync cursor (seq={state.last_seq}): "
+            f"{response.json().get('detail', response.text)}.",
         )
+        return -2
+    if response.status_code == 426:
+        _halt(db, "protocol_mismatch", "central rejected our protocol version.")
         return -2
     if response.status_code == 410:
         logger.warning(
