@@ -4,8 +4,9 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
+from anchor_server.config import settings
 from anchor_server.enums import ItemType
 
 
@@ -21,12 +22,30 @@ class AttachmentOut(BaseModel):
     size: int
     storage_path: str
     date_added: datetime
+    version: int
 
     @computed_field
     @property
     def href(self) -> str:
         """Relative download URL; prepend the API base URL (e.g. /api/v1)."""
         return f"/attachments/{self.id}"
+
+    @computed_field
+    @property
+    def available(self) -> bool:
+        """Whether the file exists locally yet (Syncthing may still deliver it)."""
+        return (settings.attachments_dir / self.storage_path).is_file()
+
+    @computed_field
+    @property
+    def size_mismatch(self) -> bool:
+        """True when a local file exists but its size differs from metadata.
+
+        A cheap detector for Syncthing filename collisions (same rendered
+        name, different content saved on two devices while offline).
+        """
+        path = settings.attachments_dir / self.storage_path
+        return path.is_file() and path.stat().st_size != self.size
 
 
 class ItemBase(BaseModel):
@@ -81,4 +100,11 @@ class ItemOut(ItemBase):
     id: uuid.UUID
     date_added: datetime
     date_modified: datetime
+    version: int
     attachments: list[AttachmentOut] = Field(default_factory=list)
+
+    @field_validator("attachments", mode="before")
+    @classmethod
+    def _drop_deleted_attachments(cls, value: Any) -> Any:
+        """Exclude soft-deleted attachments loaded through the ORM relationship."""
+        return [a for a in value if getattr(a, "deleted_at", None) is None]

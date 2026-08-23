@@ -50,6 +50,9 @@ class Item(Base):
         default=utc_now,
         onupdate=utc_now,
     )
+    # Sync groundwork: bumped on every local mutation; tombstone on delete.
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     attachments: Mapped[list["Attachment"]] = relationship(
         back_populates="item",
@@ -77,8 +80,76 @@ class Attachment(Base):
     size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     storage_path: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
     date_added: Mapped[datetime] = mapped_column(default=utc_now)
+    # Sync groundwork: bumped on every local mutation; tombstone on delete.
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    deleted_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
     item: Mapped["Item"] = relationship(back_populates="attachments")
+
+
+class OutboxEntry(Base):
+    """One pending local change waiting to be pushed to the central server.
+
+    Device-local only; entries are deleted once the central acknowledges them.
+    """
+
+    __tablename__ = "outbox"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    object_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    object_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    op: Mapped[str] = mapped_column(String(16), nullable=False)  # upsert | delete
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+
+
+class SyncState(Base):
+    """Single-row device sync state: identity and pull cursor.
+
+    The pull cursor (`last_seq`) must commit in the same transaction as the
+    applied changes, so it lives in the same database, not a state file.
+    """
+
+    __tablename__ = "sync_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # always 1
+    device_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    last_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_sync_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+
+class ChangeEntry(Base):
+    """One applied change in the central oplog.
+
+    ``seq`` is the global ordering assigned by the central server; devices
+    pull entries newer than their local cursor and apply them idempotently.
+    """
+
+    __tablename__ = "changes"
+
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    object_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    object_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True), nullable=False, index=True
+    )
+    op: Mapped[str] = mapped_column(String(16), nullable=False)  # upsert | delete
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    origin_device: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
+
+
+class ApiToken(Base):
+    """SHA-256 hash of an owner API token used for Bearer authentication."""
+
+    __tablename__ = "api_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(default=utc_now)
 
 
 class ConnectorSession(Base):

@@ -177,3 +177,67 @@ def test_template_subdirectories_are_created(client: TestClient, item_id, monkey
     assert response.status_code == 201
     data = response.json()
     assert data["storage_path"].startswith("pdfs/2024/smith/paper_with_attachments.pdf")
+
+
+def test_delete_attachment_is_soft_delete(client: TestClient, db_session, item_id):
+    """DELETE should leave a tombstone row and remove the file from disk."""
+    from anchor_server.config import settings
+    from anchor_server.models import Attachment
+
+    created = client.post(
+        f"/api/v1/items/{item_id}/attachments",
+        files={"file": ("soft.txt", BytesIO(b"soft"), "text/plain")},
+    ).json()
+    attachment_id = created["id"]
+
+    response = client.delete(f"/api/v1/attachments/{attachment_id}")
+    assert response.status_code == 204
+
+    attachment = db_session.get(Attachment, uuid.UUID(attachment_id))
+    assert attachment is not None
+    assert attachment.deleted_at is not None
+    assert attachment.version == created["version"] + 1
+    assert not (settings.attachments_dir / created["storage_path"]).exists()
+
+    # Hidden from the item's attachment list.
+    assert client.get(f"/api/v1/items/{item_id}/attachments").json() == []
+    # And from the item detail payload.
+    assert client.get(f"/api/v1/items/{item_id}").json()["attachments"] == []
+
+
+def test_attachment_availability_flags(client: TestClient, db_session, item_id):
+    """Attachments report local availability and size mismatches."""
+    from anchor_server.config import settings
+    from anchor_server.models import Attachment
+
+    created = client.post(
+        f"/api/v1/items/{item_id}/attachments",
+        files={"file": ("avail.txt", BytesIO(b"12345"), "text/plain")},
+    ).json()
+    assert created["available"] is True
+    assert created["size_mismatch"] is False
+
+    # Metadata exists but the file has not arrived (e.g. Syncthing pending).
+    ghost = Attachment(
+        item_id=uuid.UUID(item_id),
+        filename="ghost.pdf",
+        content_type="application/pdf",
+        size=100,
+        storage_path="pdfs/ghost.pdf",
+    )
+    db_session.add(ghost)
+    db_session.commit()
+
+    attachments = client.get(f"/api/v1/items/{item_id}/attachments").json()
+    by_name = {a["filename"]: a for a in attachments}
+    assert by_name["ghost.pdf"]["available"] is False
+    assert by_name["ghost.pdf"]["size_mismatch"] is False
+
+    # A file exists but its size differs from the metadata.
+    ghost_path = settings.attachments_dir / "pdfs/ghost.pdf"
+    ghost_path.parent.mkdir(parents=True, exist_ok=True)
+    ghost_path.write_bytes(b"x" * 50)
+    attachments = client.get(f"/api/v1/items/{item_id}/attachments").json()
+    by_name = {a["filename"]: a for a in attachments}
+    assert by_name["ghost.pdf"]["available"] is True
+    assert by_name["ghost.pdf"]["size_mismatch"] is True

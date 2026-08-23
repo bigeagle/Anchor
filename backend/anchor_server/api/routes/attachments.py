@@ -8,7 +8,7 @@ from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy.orm import Session
 
 from anchor_server.database import get_db
-from anchor_server.models import Attachment, Item
+from anchor_server.models import Attachment, Item, utc_now
 from anchor_server.schemas import AttachmentOut
 from anchor_server.services import markdown_service, storage
 
@@ -37,11 +37,19 @@ def _should_inline(content_type: str | None) -> bool:
 
 
 def _get_item_or_404(item_id: uuid.UUID, db: Session) -> Item:
-    """Fetch an item or raise 404."""
+    """Fetch a non-deleted item or raise 404."""
     item = db.get(Item, item_id)
-    if item is None:
+    if item is None or item.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Item not found")
     return item
+
+
+def _get_attachment_or_404(attachment_id: uuid.UUID, db: Session) -> Attachment:
+    """Fetch a non-deleted attachment or raise 404."""
+    attachment = db.get(Attachment, attachment_id)
+    if attachment is None or attachment.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    return attachment
 
 
 @router.get("/items/{item_id}/attachments", response_model=list[AttachmentOut])
@@ -50,7 +58,11 @@ def list_attachments(
 ) -> list[Attachment]:
     """List attachments belonging to an item."""
     _get_item_or_404(item_id, db)
-    return db.query(Attachment).filter(Attachment.item_id == item_id).all()
+    return (
+        db.query(Attachment)
+        .filter(Attachment.item_id == item_id, Attachment.deleted_at.is_(None))
+        .all()
+    )
 
 
 @router.post(
@@ -91,9 +103,7 @@ def download_attachment(
     attachment_id: uuid.UUID, db: Session = Depends(get_db)
 ) -> Response:
     """Download an attachment by ID."""
-    attachment = db.get(Attachment, attachment_id)
-    if attachment is None:
-        raise HTTPException(status_code=404, detail="Attachment not found")
+    attachment = _get_attachment_or_404(attachment_id, db)
 
     data = storage.read_attachment(attachment.storage_path)
     # Browsers can preview common types inline; otherwise force a download.
@@ -112,14 +122,13 @@ def download_attachment(
 
 @router.delete("/attachments/{attachment_id}", status_code=204)
 def delete_attachment(attachment_id: uuid.UUID, db: Session = Depends(get_db)) -> None:
-    """Delete an attachment."""
-    attachment = db.get(Attachment, attachment_id)
-    if attachment is None:
-        raise HTTPException(status_code=404, detail="Attachment not found")
+    """Soft-delete an attachment (the file is removed locally)."""
+    attachment = _get_attachment_or_404(attachment_id, db)
 
     storage.delete_attachment(attachment.storage_path)
     markdown_service.invalidate_attachment_markdown_cache(str(attachment_id))
-    db.delete(attachment)
+    attachment.deleted_at = utc_now()
+    attachment.version += 1
     db.commit()
 
 
@@ -132,9 +141,7 @@ def get_attachment_markdown(
     The result is cached on disk using the attachment ID as the cache key and
     invalidated when the attachment is deleted.
     """
-    attachment = db.get(Attachment, attachment_id)
-    if attachment is None:
-        raise HTTPException(status_code=404, detail="Attachment not found")
+    attachment = _get_attachment_or_404(attachment_id, db)
 
     try:
         text = markdown_service.get_attachment_markdown(attachment)

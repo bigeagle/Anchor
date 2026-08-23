@@ -82,7 +82,7 @@ def save_attachment(
 
     item_id = uuid.UUID(session.item_map[parent_id_str])
     item = db.get(Item, item_id)
-    if item is None:
+    if item is None or item.deleted_at is not None:
         raise ValueError("Parent item not found")
 
     filename = _safe_filename(metadata.title or "attachment", metadata.contentType)
@@ -174,7 +174,7 @@ def save_single_file(
         item_id = item.id
 
     item = db.get(Item, item_id)
-    if item is None:
+    if item is None or item.deleted_at is not None:
         raise ValueError("Parent item not found")
 
     filename = _safe_filename(payload.title or "snapshot", "text/html") + ".html"
@@ -223,7 +223,7 @@ def session_progress(db: Session, session_id: str) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     for connector_id, anchor_id in session.item_map.items():
         item = db.get(Item, uuid.UUID(anchor_id))
-        if item is None:
+        if item is None or item.deleted_at is not None:
             continue
         items.append(
             {

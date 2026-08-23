@@ -1,26 +1,61 @@
 """FastAPI application entry point."""
 
-from fastapi import FastAPI
+import asyncio
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 from starlette.types import Scope
 
-from anchor_server.api.routes import attachments, items, zotero_connector
+from anchor_server.api.routes import attachments, items, sync, zotero_connector
 from anchor_server.config import settings
+from anchor_server.database import get_db_context
+from anchor_server.security import ensure_api_token, require_auth
+from anchor_server.services import sync_client  # noqa: F401  (registers outbox hooks)
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Seed the owner API token; start the sync loop on device role."""
+    if settings.auth_enabled:
+        with get_db_context() as db:
+            token = ensure_api_token(db)
+        if token:
+            logger.warning(
+                "Generated new API token (shown once, store it safely): %s", token
+            )
+    sync_task = None
+    if settings.role == "device" and settings.central_url:
+        sync_task = asyncio.create_task(sync_client.sync_loop())
+    try:
+        yield
+    finally:
+        if sync_task is not None:
+            sync_task.cancel()
+
 
 app = FastAPI(
     title="Anchor",
     description="Personal reference manager API",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 API_PREFIX = "/api/v1"
 
-app.include_router(items.router, prefix=API_PREFIX)
-app.include_router(items.search_router, prefix=API_PREFIX)
-app.include_router(attachments.router, prefix=API_PREFIX)
-app.include_router(zotero_connector.router)
+_auth = [Depends(require_auth)]
+
+app.include_router(items.router, prefix=API_PREFIX, dependencies=_auth)
+app.include_router(items.search_router, prefix=API_PREFIX, dependencies=_auth)
+app.include_router(attachments.router, prefix=API_PREFIX, dependencies=_auth)
+app.include_router(sync.router, prefix=API_PREFIX, dependencies=_auth)
+app.include_router(zotero_connector.router, dependencies=_auth)
 
 
 @app.get(f"{API_PREFIX}/healthz", tags=["health"])

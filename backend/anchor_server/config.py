@@ -1,6 +1,7 @@
 """Application settings."""
 
 from pathlib import Path
+from typing import Literal
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,6 +26,21 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 23119  # Same default port as the Zotero local HTTP server
     log_level: str = "info"
+
+    # Sync role: standalone (default, no sync), central (sync coordinator),
+    # device (syncs against a central server). See docs/sync.md.
+    role: Literal["standalone", "central", "device"] = "standalone"
+
+    # Device role: where to push/pull and how to authenticate.
+    central_url: str | None = None  # e.g. https://anchor-central.example.com
+    sync_token: str | None = None  # bearer token issued by the central server
+    sync_interval: int = 30  # seconds between pulls
+
+    # Phase 4 — authentication. When enabled, all API endpoints require a
+    # Bearer token; see anchor_server/security.py. A token seeded here is
+    # stored (hashed) on first startup if the database has none yet.
+    auth_enabled: bool = False
+    api_token: str | None = None
 
     # Phase 2.2 — translator support
     translators_dir: Path = Path("./data/translators")

@@ -8,12 +8,21 @@ from sqlalchemy import String, asc, desc, or_
 from sqlalchemy.orm import Session
 
 from anchor_server.database import get_db
-from anchor_server.models import Item
+from anchor_server.models import Item, utc_now
 from anchor_server.schemas import ItemCreate, ItemOut, ItemUpdate
 from anchor_server.services import storage
 
 router = APIRouter(prefix="/items", tags=["items"])
 search_router = APIRouter(prefix="/search", tags=["search"])
+
+
+def _get_item_or_404(item_id: uuid.UUID, db: Session) -> Item:
+    """Fetch a non-deleted item or raise 404."""
+    item = db.get(Item, item_id)
+    if item is None or item.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
+
 
 # Fields exposed for sorting by GET /items.
 SORTABLE_FIELDS = {
@@ -46,7 +55,7 @@ def list_items(
             detail=f"Invalid order_by field. Allowed: {', '.join(SORTABLE_FIELDS)}",
         )
 
-    query = db.query(Item)
+    query = db.query(Item).filter(Item.deleted_at.is_(None))
     if q:
         query = query.filter(Item.title.ilike(f"%{q}%"))
 
@@ -71,10 +80,7 @@ def create_item(payload: ItemCreate, db: Session = Depends(get_db)) -> Item:
 @router.get("/{item_id}", response_model=ItemOut)
 def get_item(item_id: uuid.UUID, db: Session = Depends(get_db)) -> Item:
     """Retrieve a single item by ID."""
-    item = db.get(Item, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Item not found")
-    return item
+    return _get_item_or_404(item_id, db)
 
 
 @router.put("/{item_id}", response_model=ItemOut)
@@ -84,13 +90,12 @@ def update_item(
     db: Session = Depends(get_db),
 ) -> Item:
     """Update an existing item."""
-    item = db.get(Item, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Item not found")
+    item = _get_item_or_404(item_id, db)
 
     update_data: dict[str, Any] = payload.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(item, key, value)
+    item.version += 1
 
     db.commit()
     db.refresh(item)
@@ -99,14 +104,17 @@ def update_item(
 
 @router.delete("/{item_id}", status_code=204)
 def delete_item(item_id: uuid.UUID, db: Session = Depends(get_db)) -> None:
-    """Delete an item and all its attachments."""
-    item = db.get(Item, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Item not found")
+    """Soft-delete an item and all its attachments (files are removed locally)."""
+    item = _get_item_or_404(item_id, db)
 
+    now = utc_now()
+    item.deleted_at = now
+    item.version += 1
     for attachment in item.attachments:
+        if attachment.deleted_at is None:
+            attachment.deleted_at = now
+            attachment.version += 1
         storage.delete_attachment(attachment.storage_path)
-    db.delete(item)
     db.commit()
 
 
@@ -133,4 +141,9 @@ def search_items(
         Item.item_type.ilike(term),
         Item.authors.cast(String).ilike(term),
     ]
-    return db.query(Item).filter(or_(*filters)).limit(limit).all()
+    return (
+        db.query(Item)
+        .filter(Item.deleted_at.is_(None), or_(*filters))
+        .limit(limit)
+        .all()
+    )

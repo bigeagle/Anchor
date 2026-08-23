@@ -211,3 +211,35 @@ def test_list_items_invalid_order_by(client: TestClient):
     """GET /items should reject unknown order_by fields."""
     response = client.get("/api/v1/items/?order_by=unknown")
     assert response.status_code == 400
+
+
+def test_update_item_bumps_version(client: TestClient, sample_item_payload):
+    """Each update should increment the item version."""
+    created = client.post("/api/v1/items/", json=sample_item_payload).json()
+    assert created["version"] == 1
+
+    updated = client.put(f"/api/v1/items/{created['id']}", json={"title": "V2"}).json()
+    assert updated["version"] == 2
+
+    updated = client.put(f"/api/v1/items/{created['id']}", json={"year": 1999}).json()
+    assert updated["version"] == 3
+
+
+def test_delete_item_is_soft_delete(
+    client: TestClient, db_session, sample_item_payload
+):
+    """DELETE should leave a tombstone row and hide the item from list/search."""
+    created = client.post("/api/v1/items/", json=sample_item_payload).json()
+    item_id = created["id"]
+
+    response = client.delete(f"/api/v1/items/{item_id}")
+    assert response.status_code == 204
+
+    item = db_session.get(Item, uuid.UUID(item_id))
+    assert item is not None
+    assert item.deleted_at is not None
+    assert item.version == created["version"] + 1
+
+    assert client.get("/api/v1/items/").json() == []
+    response = client.get("/api/v1/search/?q=Test")
+    assert response.json() == []
