@@ -3,14 +3,15 @@
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from pydantic import ValidationError
 from sqlalchemy import String, asc, desc, or_
 from sqlalchemy.orm import Session
 
 from anchor_server.database import get_db
 from anchor_server.models import Item, utc_now
 from anchor_server.schemas import ItemCreate, ItemOut, ItemUpdate
-from anchor_server.services import storage
+from anchor_server.services import attachment_service, storage
 
 router = APIRouter(prefix="/items", tags=["items"])
 search_router = APIRouter(prefix="/search", tags=["search"])
@@ -72,6 +73,57 @@ def create_item(payload: ItemCreate, db: Session = Depends(get_db)) -> Item:
     """Create a new bibliographic item."""
     item = Item(**payload.model_dump())
     db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.post("/with-attachment", response_model=ItemOut, status_code=201)
+def create_item_with_attachment(
+    metadata: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+) -> Item:
+    """Create an item and its first attachment atomically.
+
+    ``metadata`` is a JSON string matching ``ItemCreate``. If the rendered
+    target path already has a live attachment with identical content,
+    nothing is written and the endpoint returns 409 naming the existing
+    item — no orphan item is left behind.
+    """
+    try:
+        payload = ItemCreate.model_validate_json(metadata)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+    if file.filename is None:
+        raise HTTPException(status_code=400, detail="Missing filename")
+
+    data = file.file.read()
+    # Transient item: renders the same target path as the persisted one.
+    item = Item(**payload.model_dump())
+
+    existing = attachment_service.find_duplicate(
+        db, item, file.filename, file.content_type, data
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=attachment_service.duplicate_detail(existing),
+        )
+
+    db.add(item)
+    db.flush()
+    try:
+        attachment_service.store_attachment(
+            db, item, file.filename, file.content_type, data
+        )
+    except attachment_service.DuplicateAttachmentError as exc:
+        # Lost a race with a concurrent write: roll back the new item too.
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=attachment_service.duplicate_detail(exc.existing),
+        ) from exc
     db.commit()
     db.refresh(item)
     return item

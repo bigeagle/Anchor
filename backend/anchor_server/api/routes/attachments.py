@@ -69,10 +69,15 @@ def list_attachments(
 )
 def upload_attachment(
     item_id: uuid.UUID,
+    response: Response,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> Attachment:
-    """Upload a file attachment for an item."""
+    """Upload a file attachment for an item.
+
+    Idempotent: re-uploading identical content (same rendered path) returns
+    200 with the existing attachment instead of failing.
+    """
     item = _get_item_or_404(item_id, db)
 
     if file.filename is None:
@@ -84,16 +89,8 @@ def upload_attachment(
             db, item, file.filename, file.content_type, data
         )
     except attachment_service.DuplicateAttachmentError as exc:
-        existing = exc.existing
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": str(exc),
-                "existing_item_id": str(existing.item_id),
-                "existing_item_title": existing.item.title if existing.item else None,
-                "existing_attachment_id": str(existing.id),
-            },
-        ) from exc
+        response.status_code = 200
+        return exc.existing
     db.commit()
     db.refresh(attachment)
     return attachment

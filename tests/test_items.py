@@ -1,6 +1,8 @@
 """Tests for item CRUD endpoints."""
 
+import json
 import uuid
+from io import BytesIO
 
 import pytest
 from fastapi.testclient import TestClient
@@ -243,3 +245,55 @@ def test_delete_item_is_soft_delete(
     assert client.get("/api/v1/items/").json() == []
     response = client.get("/api/v1/search/?q=Test")
     assert response.json() == []
+
+
+def test_create_item_with_attachment(client: TestClient, sample_item_payload):
+    """POST /items/with-attachment should create item and attachment atomically."""
+    response = client.post(
+        "/api/v1/items/with-attachment",
+        data={"metadata": json.dumps(sample_item_payload)},
+        files={"file": ("paper.pdf", BytesIO(b"pdf bytes"), "application/pdf")},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["title"] == "Test Paper"
+    assert len(data["attachments"]) == 1
+    assert data["attachments"][0]["content_type"] == "application/pdf"
+
+
+def test_create_item_with_attachment_duplicate_leaves_nothing(
+    client: TestClient, db_session, sample_item_payload
+):
+    """A duplicate upload should 409 without creating any rows."""
+    from anchor_server.models import Attachment
+
+    first = client.post(
+        "/api/v1/items/with-attachment",
+        data={"metadata": json.dumps(sample_item_payload)},
+        files={"file": ("paper.pdf", BytesIO(b"pdf bytes"), "application/pdf")},
+    )
+    assert first.status_code == 201
+
+    response = client.post(
+        "/api/v1/items/with-attachment",
+        data={"metadata": json.dumps(sample_item_payload)},
+        files={"file": ("paper2.pdf", BytesIO(b"pdf bytes"), "application/pdf")},
+    )
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["existing_item_id"] == first.json()["id"]
+    assert detail["existing_item_title"] == "Test Paper"
+
+    # No orphan item or attachment left behind.
+    assert db_session.query(Item).count() == 1
+    assert db_session.query(Attachment).count() == 1
+
+
+def test_create_item_with_attachment_invalid_metadata(client: TestClient):
+    """Malformed metadata JSON should return 422."""
+    response = client.post(
+        "/api/v1/items/with-attachment",
+        data={"metadata": '{"title": 42}'},
+        files={"file": ("paper.pdf", BytesIO(b"x"), "application/pdf")},
+    )
+    assert response.status_code == 422

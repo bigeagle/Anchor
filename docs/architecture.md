@@ -242,13 +242,17 @@ directory safe to synchronize with external tools such as Syncthing (see
 All attachment writes (public API, Zotero Connector) go through
 `services/attachment_service.store_attachment`, which dedups by the rendered
 target path (deterministic in item metadata, so re-saving the same item
-collides on the same path):
+collides on the same path). Clients that create an item together with its
+first file should use the atomic `POST /items/with-attachment` endpoint: it
+probes for a duplicate with a transient item before writing anything, so a
+409 leaves no orphan item behind. Dedup rules:
 
 - If a live attachment already claims the target path and the on-disk file
-  has identical content (md5 computed on the spot), the write is rejected
-  (`DuplicateAttachmentError`). The public API returns 409 with the existing
-  attachment and item ids/title; the Zotero Connector instead treats it as an
-  idempotent success so re-saves don't surface as browser-extension errors.
+  has identical content (md5 computed on the spot), the write is a no-op
+  (`DuplicateAttachmentError`). The plain upload endpoint returns 200 with
+  the existing attachment (idempotent), the atomic
+  `POST /items/with-attachment` returns 409 (nothing is written), and the
+  Zotero Connector treats it as success — re-saves never surface as errors.
 - If the target file exists with identical content but no attachment row
   claims the path (e.g. delivered out-of-band by Syncthing), the file is
   adopted instead of writing a copy.

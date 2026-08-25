@@ -37,6 +37,16 @@ class DuplicateAttachmentError(ValueError):
         )
 
 
+def duplicate_detail(existing: Attachment) -> dict[str, str | None]:
+    """409 response body identifying the duplicate's item and attachment."""
+    return {
+        "message": str(DuplicateAttachmentError(existing)),
+        "existing_item_id": str(existing.item_id),
+        "existing_item_title": existing.item.title if existing.item else None,
+        "existing_attachment_id": str(existing.id),
+    }
+
+
 def find_duplicate(
     db: Session,
     item: Item,

@@ -243,24 +243,24 @@ def test_attachment_availability_flags(client: TestClient, db_session, item_id):
     assert by_name["ghost.pdf"]["size_mismatch"] is True
 
 
-def test_upload_duplicate_content_rejected(client: TestClient, item_id):
-    """Re-saving the same item with identical content returns 409."""
+def test_upload_duplicate_is_idempotent(client: TestClient, item_id):
+    """Re-uploading identical content returns 200 with the existing attachment."""
     first = client.post(
         f"/api/v1/items/{item_id}/attachments",
         files={"file": ("dup.pdf", BytesIO(b"same bytes"), "application/pdf")},
     )
     assert first.status_code == 201
 
-    # Same item, same content: renders the same target path — a duplicate.
+    # Same item, same content: renders the same target path — idempotent hit.
     response = client.post(
         f"/api/v1/items/{item_id}/attachments",
         files={"file": ("dup.pdf", BytesIO(b"same bytes"), "application/pdf")},
     )
-    assert response.status_code == 409
-    detail = response.json()["detail"]
-    assert detail["existing_item_id"] == item_id
-    assert detail["existing_item_title"] == "Paper With Attachments"
-    assert detail["existing_attachment_id"] == first.json()["id"]
+    assert response.status_code == 200
+    assert response.json()["id"] == first.json()["id"]
+
+    attachments = client.get(f"/api/v1/items/{item_id}/attachments").json()
+    assert len(attachments) == 1
 
 
 def test_same_content_on_other_item_allowed(client: TestClient, item_id):

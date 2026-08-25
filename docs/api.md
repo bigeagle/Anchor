@@ -29,10 +29,17 @@ own section below.
 ```text
 GET    /api/v1/items
 POST   /api/v1/items
+POST   /api/v1/items/with-attachment
 GET    /api/v1/items/{item_id}
 PATCH  /api/v1/items/{item_id}
 DELETE /api/v1/items/{item_id}
 ```
+
+`POST /api/v1/items/with-attachment` creates an item and its first attachment
+atomically: multipart form with a `metadata` field (JSON matching the item
+create payload) and a `file` field. If the attachment is a duplicate (same
+rendered path and content as an existing one), the endpoint returns
+`409 Conflict` and writes nothing — no orphan item is left behind.
 
 `GET /api/v1/items` supports pagination, filtering, and sorting:
 
@@ -68,10 +75,9 @@ GET    /api/v1/attachments/{attachment_id}/file
 ```
 
 Upload uses multipart form data with a `file` field plus optional metadata.
-Uploads are deduplicated by the rendered target path: re-uploading identical
-content for the same item returns `409 Conflict` with
-`detail.existing_item_id` / `existing_item_title` / `existing_attachment_id`
-identifying the duplicate.
+Uploads are idempotent: re-uploading identical content for the same item
+(same rendered path) returns `200 OK` with the existing attachment instead of
+creating a duplicate.
 
 ---
 
