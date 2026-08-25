@@ -37,6 +37,7 @@ SORTABLE_FIELDS = {
 }
 
 
+@router.get("", response_model=list[ItemOut], include_in_schema=False)
 @router.get("/", response_model=list[ItemOut])
 def list_items(
     skip: int = Query(0, ge=0),
@@ -68,6 +69,7 @@ def list_items(
     return query.order_by(order_clause).offset(skip).limit(limit).all()
 
 
+@router.post("", response_model=ItemOut, status_code=201, include_in_schema=False)
 @router.post("/", response_model=ItemOut, status_code=201)
 def create_item(payload: ItemCreate, db: Session = Depends(get_db)) -> Item:
     """Create a new bibliographic item."""
@@ -170,6 +172,7 @@ def delete_item(item_id: uuid.UUID, db: Session = Depends(get_db)) -> None:
     db.commit()
 
 
+@search_router.get("", response_model=list[ItemOut], include_in_schema=False)
 @search_router.get("/", response_model=list[ItemOut])
 def search_items(
     q: str = Query(..., min_length=1, description="Search query"),

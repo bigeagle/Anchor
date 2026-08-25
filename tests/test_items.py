@@ -163,6 +163,24 @@ def test_search_items(client: TestClient, sample_item_payload):
     assert response.json()[0]["id"] == created["id"]
 
 
+def test_search_without_trailing_slash(client: TestClient, sample_item_payload):
+    """GET /search (no slash) must hit the API, not the SPA fallback."""
+    client.post("/api/v1/items/", json=sample_item_payload)
+    response = client.get("/api/v1/search?q=Test")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert len(response.json()) == 1
+
+
+def test_items_without_trailing_slash(client: TestClient, sample_item_payload):
+    """GET/POST /items (no slash) must hit the API, not the SPA fallback."""
+    response = client.post("/api/v1/items", json=sample_item_payload)
+    assert response.status_code == 201
+    response = client.get("/api/v1/items")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+
+
 def test_search_no_match(client: TestClient, sample_item_payload):
     """GET /search with a non-matching term should return an empty list."""
     client.post("/api/v1/items/", json=sample_item_payload)
