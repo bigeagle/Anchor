@@ -77,14 +77,22 @@ def post_json(path: str, payload: dict) -> dict:
     return response.json()
 
 
-def post_file(path: str, field_name: str, filename: str, data: bytes) -> dict:
-    files = {field_name: (filename, data, "application/pdf")}
+def post_item_with_attachment(metadata: dict, filename: str, data: bytes) -> dict:
+    """Create an item and its first PDF attachment atomically.
+
+    Preferred over create-then-upload: a duplicate returns the existing
+    item's info and writes nothing. Returns the created item (with embedded
+    attachments) or, on 409, ``{"_status": "exists", **detail}``.
+    """
     response = requests.post(
-        _url(path),
-        files=files,
+        _url("items/with-attachment"),
+        data={"metadata": json.dumps(metadata)},
+        files={"file": (filename, data, "application/pdf")},
         headers=request_headers(),
         timeout=120,
     )
+    if response.status_code == 409:
+        return {"_status": "exists", **response.json()["detail"]}
     response.raise_for_status()
     return response.json()
 
@@ -178,18 +186,14 @@ def cmd_import_pdf(args: argparse.Namespace) -> int:
     if args.year is not None:
         payload["year"] = args.year
 
-    item = post_json("items", payload)
-    item_id = item["id"]
+    item = post_item_with_attachment(payload, pdf_path.name, pdf_path.read_bytes())
+    if item.get("_status") == "exists":
+        print_json(
+            {"status": "exists", **{k: v for k, v in item.items() if k != "_status"}}
+        )
+        return 0
 
-    data = pdf_path.read_bytes()
-    attachment = post_file(
-        f"items/{item_id}/attachments",
-        "file",
-        pdf_path.name,
-        data,
-    )
-
-    print_json({"item": item, "attachment": attachment})
+    print_json({"item": item, "attachment": item["attachments"][0]})
     return 0
 
 
@@ -457,20 +461,26 @@ def cmd_arxiv_save(args: argparse.Namespace) -> int:
         "url": metadata["url"],
     }
 
-    item = post_json("items", item_payload)
-    item_id = item["id"]
-
-    attachment = None
     if not args.no_pdf:
         pdf_path = client.download_pdf(args.arxiv_id)
-        attachment = post_file(
-            f"items/{item_id}/attachments",
-            "file",
-            pdf_path.name,
-            pdf_path.read_bytes(),
+        item = post_item_with_attachment(
+            item_payload, pdf_path.name, pdf_path.read_bytes()
         )
+        if item.get("_status") == "exists":
+            print_json(
+                {
+                    "status": "exists",
+                    **{k: v for k, v in item.items() if k != "_status"},
+                }
+            )
+            return 0
+        print_json(
+            {"status": "saved", "item": item, "attachment": item["attachments"][0]}
+        )
+        return 0
 
-    print_json({"status": "saved", "item": item, "attachment": attachment})
+    item = post_json("items", item_payload)
+    print_json({"status": "saved", "item": item, "attachment": None})
     return 0
 
 

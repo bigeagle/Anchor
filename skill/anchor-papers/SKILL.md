@@ -30,10 +30,14 @@ Items:
 
 - `GET /api/v1/items?skip=&limit=&q=` — list items, optional title substring filter `q`
 - `GET /api/v1/items/{item_id}` — full item with embedded attachments
+- `POST /api/v1/items/with-attachment` — atomically create an item plus its first file: multipart form with a `metadata` field (JSON item payload) and a `file` field. Returns `201` with the item, or `409` with `detail.existing_item_id` / `existing_item_title` / `existing_attachment_id` if the same file already exists — in that case nothing is written, so report the existing item instead of retrying.
+
+**Prefer `with-attachment` whenever you create an item together with a file** (importing a PDF, saving an arXiv paper). The two-step alternative (`POST /items` then `POST /items/{id}/attachments`) can leave an orphan item behind when the upload turns out to be a duplicate.
 
 Attachments:
 
 - `GET /api/v1/items/{item_id}/attachments` — list attachments
+- `POST /api/v1/items/{item_id}/attachments` — add a file to an existing item; idempotent: re-uploading identical content returns `200` with the existing attachment
 - `GET /api/v1/attachments/{attachment_id}` — download file bytes (also returns metadata headers)
 - `GET /api/v1/attachments/{attachment_id}/markdown` — Markdown/text extraction
 
@@ -76,13 +80,13 @@ uv run scripts/anchor_papers.py arxiv save 1706.03762
 - `markdown` — convert the arXiv PDF to Markdown and print it.
 - `source` — download and extract the TeX source package, print the directory and file list.
 - `check` — search Anchor for this arXiv ID and report whether it is already saved.
-- `save` — create an Anchor item from the arXiv metadata and upload the PDF (unless `--no-pdf`). `save` also uses `check` to avoid duplicates.
+- `save` — create an Anchor item from the arXiv metadata and upload the PDF (unless `--no-pdf`) via the atomic `with-attachment` endpoint. `save` also uses `check` to avoid duplicates; if the server still reports a duplicate (409), it prints `status: exists` with the existing item's info.
 
 Cache is stored under `~/.cache/anchor-papers/arxiv/`.
 
 ## Import local PDF
 
-The `import-pdf` command creates a new item and uploads the PDF as its attachment.
+The `import-pdf` command creates a new item and uploads the PDF as its attachment in one atomic `with-attachment` call. If the same file already exists under an identical item, nothing is written and the command prints `status: exists` with the existing item's info.
 
 ```bash
 uv run scripts/anchor_papers.py import-pdf ./paper.pdf \
