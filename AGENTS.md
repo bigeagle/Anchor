@@ -13,3 +13,4 @@
   cp "$(uv run python -c 'from anchor_server.config import settings; print(settings.database_url.replace("sqlite:///", ""))')" "backup/anchor_$(date +%Y%m%d_%H%M%S).db"
   ```
 - 多端同步（设计见 `docs/sync.md`）：`ANCHOR_ROLE` 取 `standalone`（默认）/ `central` / `device`；中心端必须开 `ANCHOR_AUTH_ENABLED=true`，设备端配 `ANCHOR_CENTRAL_URL` + `ANCHOR_SYNC_TOKEN`，轮询间隔 `ANCHOR_SYNC_INTERVAL`（默认 30s）
+- 改动同步协议或被同步的 schema（items/attachments 的字段）时，必须 bump `backend/anchor_server/schemas/sync.py` 里的 `SYNC_PROTOCOL_VERSION`；版本不一致时设备端和中心端会互相拒绝运行
