@@ -5,7 +5,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from anchor_server.models import ConnectorSession, Item
+from anchor_server.models import ConnectorSession, Item, utc_now
 from anchor_server.schemas.zotero import (
     ConnectorSaveAttachmentMetadata,
     ConnectorSaveItemsRequest,
@@ -37,6 +37,52 @@ def _save_session(session: ConnectorSession, db: Session) -> None:
     db.refresh(session)
 
 
+def _find_existing_item(db: Session, item: Item) -> Item | None:
+    """Probe for a live item sharing a hard identifier, in priority order.
+
+    Connector metadata comes from translators, so DOI/arXiv/ISBN/URL are
+    usually present and reliable — unlike the public API, where we never
+    dedup items automatically.
+    """
+    for column, value in (
+        (Item.doi, item.doi),
+        (Item.arxiv_id, item.arxiv_id),
+        (Item.isbn, item.isbn),
+        (Item.url, item.url),
+    ):
+        if not value:
+            continue
+        existing = (
+            db.query(Item).filter(column == value, Item.deleted_at.is_(None)).first()
+        )
+        if existing is not None:
+            return existing
+    return None
+
+
+def _absorb_shell(
+    db: Session, session: ConnectorSession, shell: Item, target_item_id: uuid.UUID
+) -> None:
+    """Absorb an empty item shell into the item holding the duplicate file.
+
+    Only applies to shells created by this session with no live attachments:
+    the session map is repointed at the existing item and the shell is
+    soft-deleted (the tombstone propagates via sync, so the net effect of a
+    duplicate save is zero visible new rows).
+    """
+    if str(shell.id) not in session.item_map.values():
+        return  # not created by this session — leave it alone
+    if any(a.deleted_at is None for a in shell.attachments):
+        return  # not an empty shell
+
+    session.item_map = {
+        key: (str(target_item_id) if value == str(shell.id) else value)
+        for key, value in session.item_map.items()
+    }
+    shell.deleted_at = utc_now()
+    shell.version += 1
+
+
 def save_items(db: Session, payload: ConnectorSaveItemsRequest) -> dict[str, Any]:
     """Create Anchor items from a connector payload and record the session map."""
     session = get_or_create_session(db, payload.sessionID)
@@ -46,8 +92,14 @@ def save_items(db: Session, payload: ConnectorSaveItemsRequest) -> dict[str, Any
 
     for connector_item in payload.items:
         item = import_service.map_connector_item_to_item(connector_item)
-        db.add(item)
-        db.flush()  # assign item.id
+        existing = _find_existing_item(db, item)
+        if existing is not None:
+            # Saved before: reuse the existing item instead of creating a
+            # duplicate shell.
+            item = existing
+        else:
+            db.add(item)
+            db.flush()  # assign item.id
         item_map[connector_item.id] = str(item.id)
 
         # In the modern workflow, only link-style attachments are listed here.
@@ -92,8 +144,11 @@ def save_attachment(
         )
     except attachment_service.DuplicateAttachmentError as exc:
         # Re-save of an already-stored attachment: idempotent success, the
-        # browser extension should not see an error.
+        # browser extension should not see an error. If the duplicate belongs
+        # to a different item, absorb this session's empty shell into it.
         attachment = exc.existing
+        if attachment.item_id != item.id:
+            _absorb_shell(db, session, item, attachment.item_id)
 
     attachment_map = dict(session.attachment_map)
     attachment_map[metadata.id] = str(attachment.id)
@@ -188,9 +243,12 @@ def save_single_file(
         attachment_service.store_attachment(
             db, item, filename, "text/html", payload.snapshotContent.encode("utf-8")
         )
-    except attachment_service.DuplicateAttachmentError:
-        # Identical snapshot already stored: idempotent success.
-        pass
+    except attachment_service.DuplicateAttachmentError as exc:
+        # Identical snapshot already stored: idempotent success. Absorb this
+        # session's empty shell if the duplicate belongs to another item.
+        existing = exc.existing
+        if existing.item_id != item.id:
+            _absorb_shell(db, session, item, existing.item_id)
 
     _save_session(session, db)
     return {}

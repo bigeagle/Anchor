@@ -253,6 +253,16 @@ probes for a duplicate with a transient item before writing anything, so a
   the existing attachment (idempotent), the atomic
   `POST /items/with-attachment` returns 409 (nothing is written), and the
   Zotero Connector treats it as success — re-saves never surface as errors.
+
+The connector additionally avoids duplicate *items* in two stages, since its
+fixed multi-request protocol (`saveItems` → `saveAttachment`) cannot be
+atomic. `saveItems` first probes hard identifiers (DOI → arXiv → ISBN → URL —
+translator metadata is usually reliable) and maps the session onto an
+existing item instead of creating a new one. Items without identifiers slip
+through and create a shell, but when a later attachment upload hits a
+duplicate owned by another item, the shell (created by that session, no live
+attachments) is soft-deleted and the session is repointed at the existing
+item — a duplicate save leaves zero visible new rows.
 - If the target file exists with identical content but no attachment row
   claims the path (e.g. delivered out-of-band by Syncthing), the file is
   adopted instead of writing a copy.

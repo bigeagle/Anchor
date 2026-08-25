@@ -346,3 +346,86 @@ def test_save_standalone_attachment_duplicate_reuses_item(
 
     assert db_session.query(Item).count() == 1
     assert db_session.query(Attachment).count() == 1
+
+
+def test_save_items_dedups_by_identifier(
+    client: TestClient, article_payload, db_session
+):
+    """A second save whose DOI matches an existing item reuses that item."""
+    client.post("/connector/saveItems", json=article_payload)
+
+    second = dict(article_payload, sessionID="test-session-2")
+    response = client.post("/connector/saveItems", json=second)
+    assert response.status_code == 200
+
+    items = db_session.query(Item).all()
+    assert len(items) == 1
+
+    session2 = (
+        db_session.query(ConnectorSession)
+        .filter(ConnectorSession.session_id == "test-session-2")
+        .first()
+    )
+    assert session2.item_map["item1"] == str(items[0].id)
+
+
+def test_save_attachment_absorbs_shell_on_duplicate(client: TestClient, db_session):
+    """Without identifiers, a duplicate save absorbs the new empty shell."""
+    payload = {
+        "sessionID": "shell-1",
+        "uri": "https://example.com/noids",
+        "items": [
+            {
+                "id": "item1",
+                "itemType": "journalArticle",
+                "title": "Paper Without Identifiers",
+                "attachments": [
+                    {
+                        "id": "att1",
+                        "parentItem": "item1",
+                        "title": "Full Text PDF",
+                        "url": "https://example.com/noids.pdf",
+                        "mimeType": "application/pdf",
+                    }
+                ],
+            }
+        ],
+    }
+    metadata = json.dumps(
+        {
+            "id": "att1",
+            "parentItemID": "item1",
+            "title": "Full Text PDF",
+            "contentType": "application/pdf",
+        }
+    )
+
+    # First save: creates item + attachment.
+    client.post("/connector/saveItems", json=payload)
+    client.post(
+        "/connector/saveAttachment?sessionID=shell-1",
+        content=b"pdf content",
+        headers={"Content-Type": "application/pdf", "X-Metadata": metadata},
+    )
+    first_item = db_session.query(Item).one()
+
+    # Second save in a new session: no identifiers match, so saveItems
+    # creates a shell; the duplicate attachment upload absorbs it.
+    client.post("/connector/saveItems", json=dict(payload, sessionID="shell-2"))
+    response = client.post(
+        "/connector/saveAttachment?sessionID=shell-2",
+        content=b"pdf content",
+        headers={"Content-Type": "application/pdf", "X-Metadata": metadata},
+    )
+    assert response.status_code == 200
+
+    live_items = db_session.query(Item).filter(Item.deleted_at.is_(None)).all()
+    assert live_items == [first_item]
+    assert db_session.query(Attachment).count() == 1
+
+    session2 = (
+        db_session.query(ConnectorSession)
+        .filter(ConnectorSession.session_id == "shell-2")
+        .first()
+    )
+    assert session2.item_map["item1"] == str(first_item.id)
