@@ -119,13 +119,13 @@ def cmd_list(args: argparse.Namespace) -> int:
     params = {"limit": args.limit, "skip": args.offset}
     if args.query:
         params["q"] = args.query
-    print_json(get_json("items", params))
+    print_json(get_json("items/", params))
     return 0
 
 
 def cmd_search(args: argparse.Namespace) -> int:
     params = {"q": args.query, "limit": args.limit}
-    print_json(get_json("search", params))
+    print_json(get_json("search/", params))
     return 0
 
 
@@ -396,7 +396,7 @@ def cmd_arxiv_source(args: argparse.Namespace) -> int:
 
 def _find_in_anchor(arxiv_id: str) -> dict | None:
     """Return the Anchor item that matches this arXiv ID, if any."""
-    results = get_json("search", {"q": arxiv_id, "limit": 100})
+    results = get_json("search/", {"q": arxiv_id, "limit": 100})
     if not isinstance(results, list):
         return None
     abs_url = f"arxiv.org/abs/{arxiv_id}"
@@ -479,7 +479,7 @@ def cmd_arxiv_save(args: argparse.Namespace) -> int:
         )
         return 0
 
-    item = post_json("items", item_payload)
+    item = post_json("items/", item_payload)
     print_json({"status": "saved", "item": item, "attachment": None})
     return 0
 

@@ -28,7 +28,7 @@ Set environment variables before running the helper script:
 
 Items:
 
-- `GET /api/v1/items?skip=&limit=&q=` — list items, optional title substring filter `q`
+- `GET /api/v1/items/?skip=&limit=&q=` — list items, optional title substring filter `q`. Prefer the trailing slash; current backends accept both forms, but older ones return the SPA HTML page (not JSON) for `/api/v1/items` without it — same for `/api/v1/search/`.
 - `GET /api/v1/items/{item_id}` — full item with embedded attachments
 - `POST /api/v1/items/with-attachment` — atomically create an item plus its first file: multipart form with a `metadata` field (JSON item payload) and a `file` field. Returns `201` with the item, or `409` with `detail.existing_item_id` / `existing_item_title` / `existing_attachment_id` if the same file already exists — in that case nothing is written, so report the existing item instead of retrying.
 
@@ -60,7 +60,7 @@ uv run scripts/anchor_papers.py text <attachment-id>
 uv run scripts/anchor_papers.py import-pdf ./paper.pdf --title "Paper Title"
 ```
 
-`search` uses `GET /api/v1/search?q=...` and matches titles, abstracts, authors, identifiers, publication, and other item fields.
+`search` uses `GET /api/v1/search/?q=...` and matches titles, abstracts, authors, identifiers, publication, and other item fields.
 
 The `text` command returns the attachment as Markdown via Anchor's `/attachments/{id}/markdown` endpoint. It works for PDFs and other supported formats.
 
