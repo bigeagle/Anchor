@@ -239,6 +239,21 @@ Relative paths keep the database portable across machines and make the
 directory safe to synchronize with external tools such as Syncthing (see
 [sync.md](sync.md) for how multi-device sync builds on this).
 
+All attachment writes (public API, Zotero Connector) go through
+`services/attachment_service.store_attachment`, which dedups by the rendered
+target path (deterministic in item metadata, so re-saving the same item
+collides on the same path):
+
+- If a live attachment already claims the target path and the on-disk file
+  has identical content (md5 computed on the spot), the write is rejected
+  (`DuplicateAttachmentError`; the API returns 409 with the existing
+  attachment and item ids/title) — the item is very likely being saved twice.
+- If the target file exists with identical content but no attachment row
+  claims the path (e.g. delivered out-of-band by Syncthing), the file is
+  adopted instead of writing a copy.
+- `storage_path` is unique, so paths held by tombstone rows stay claimed and
+  new attachments get the `_1`, `_2`, … suffixes instead.
+
 ## Deletion
 
 Phase 1, Phase 2.1, and Phase 2.2 use hard deletes for simplicity. Phase 4

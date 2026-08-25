@@ -1,7 +1,9 @@
 """Local file storage for attachments."""
 
+import hashlib
 import re
 import unicodedata
+from collections.abc import Callable
 from pathlib import Path
 
 from jinja2 import BaseLoader, Environment
@@ -68,18 +70,39 @@ def _attachment_kind(content_type: str | None, filename: str) -> str:
     return "others"
 
 
-def _unique_path(directory: Path, name: str) -> Path:
+def render_target_path(item: Item, filename: str, content_type: str | None) -> str:
+    """Relative storage path the attachment renders to (before dedup/suffixes).
+
+    Deterministic in the item's metadata, so it doubles as the dedup key:
+    re-saving the same item renders the same path.
+    """
+    kind = _attachment_kind(content_type, filename)
+    return f"{kind}/{_render_name(item, filename)}"
+
+
+def _unique_path(
+    directory: Path, name: str, is_free: Callable[[str], bool] | None = None
+) -> Path:
     """Return a non-conflicting path inside ``directory`` for ``name``.
 
     ``name`` may contain subdirectories; all required parent directories are
     created automatically. Duplicate basenames get ``_1``, ``_2``, etc.
+    A path is unavailable when it exists on disk or ``is_free`` rejects it
+    (e.g. a tombstone row still holds the unique storage_path).
     """
     relative = Path(name)
     target_dir = directory / relative.parent
     target_dir.mkdir(parents=True, exist_ok=True)
 
+    def available(candidate: Path) -> bool:
+        if candidate.exists():
+            return False
+        if is_free is None:
+            return True
+        return is_free(str(candidate.relative_to(directory.parent)))
+
     candidate = target_dir / relative.name
-    if not candidate.exists():
+    if available(candidate):
         return candidate
 
     stem = Path(relative.name).stem
@@ -87,9 +110,14 @@ def _unique_path(directory: Path, name: str) -> Path:
     counter = 1
     while True:
         candidate = target_dir / f"{stem}_{counter}{suffix}"
-        if not candidate.exists():
+        if available(candidate):
             return candidate
         counter += 1
+
+
+def md5_hex(data: bytes) -> str:
+    """Content hash used as the attachment dedup key."""
+    return hashlib.md5(data).hexdigest()  # noqa: S324 - dedup, not security
 
 
 def save_attachment(
@@ -97,6 +125,8 @@ def save_attachment(
     filename: str,
     content_type: str | None,
     data: bytes,
+    *,
+    is_free: Callable[[str], bool] | None = None,
 ) -> str:
     """Save attachment bytes and return the relative storage path.
 
@@ -105,12 +135,25 @@ def save_attachment(
     template. The rendered name may contain subdirectories, which are created
     automatically. Duplicate filenames are resolved by appending ``_1``,
     ``_2``, etc.
+
+    ``is_free`` reports whether a relative path is unclaimed in the database
+    (no attachment row, live or tombstone, holds it — storage_path has a
+    unique constraint). When the rendered target already exists on disk, its
+    content matches ``data`` (by md5), and ``is_free`` confirms the path is
+    unclaimed, the existing file is adopted instead of writing a copy — this
+    reuses files delivered out-of-band (e.g. by Syncthing).
     """
     kind = _attachment_kind(content_type, filename)
     directory = settings.attachments_dir / kind
 
     name = _render_name(item, filename)
-    storage_path = _unique_path(directory, name)
+    candidate = directory / name
+    if candidate.exists() and is_free is not None:
+        relative = str(candidate.relative_to(settings.attachments_dir))
+        if is_free(relative) and md5_hex(candidate.read_bytes()) == md5_hex(data):
+            return relative
+
+    storage_path = _unique_path(directory, name, is_free)
     storage_path.write_bytes(data)
     return str(storage_path.relative_to(settings.attachments_dir))
 

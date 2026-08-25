@@ -5,7 +5,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from anchor_server.models import Attachment, ConnectorSession, Item
+from anchor_server.models import ConnectorSession, Item
 from anchor_server.schemas.zotero import (
     ConnectorSaveAttachmentMetadata,
     ConnectorSaveItemsRequest,
@@ -13,7 +13,7 @@ from anchor_server.schemas.zotero import (
     ConnectorSaveSnapshotRequest,
     ConnectorStandaloneAttachmentMetadata,
 )
-from anchor_server.services import import_service, storage
+from anchor_server.services import attachment_service, import_service
 
 
 def get_or_create_session(db: Session, session_id: str) -> ConnectorSession:
@@ -86,17 +86,9 @@ def save_attachment(
         raise ValueError("Parent item not found")
 
     filename = _safe_filename(metadata.title or "attachment", metadata.contentType)
-    storage_path = storage.save_attachment(item, filename, metadata.contentType, data)
-
-    attachment = Attachment(
-        item_id=item_id,
-        filename=storage_path.split("/")[-1],
-        content_type=metadata.contentType,
-        size=len(data),
-        storage_path=storage_path,
+    attachment = attachment_service.store_attachment(
+        db, item, filename, metadata.contentType, data
     )
-    db.add(attachment)
-    db.flush()
 
     attachment_map = dict(session.attachment_map)
     attachment_map[metadata.id] = str(attachment.id)
@@ -135,17 +127,7 @@ def save_standalone_attachment(
     session.item_map = item_map
 
     filename = _safe_filename(metadata.title or "attachment", metadata.contentType)
-    storage_path = storage.save_attachment(item, filename, metadata.contentType, data)
-
-    attachment = Attachment(
-        item_id=item.id,
-        filename=storage_path.split("/")[-1],
-        content_type=metadata.contentType,
-        size=len(data),
-        storage_path=storage_path,
-    )
-    db.add(attachment)
-    db.flush()
+    attachment_service.store_attachment(db, item, filename, metadata.contentType, data)
 
     _save_session(session, db)
     return {"canRecognize": False}
@@ -178,19 +160,9 @@ def save_single_file(
         raise ValueError("Parent item not found")
 
     filename = _safe_filename(payload.title or "snapshot", "text/html") + ".html"
-    storage_path = storage.save_attachment(
-        item, filename, "text/html", payload.snapshotContent.encode("utf-8")
+    attachment_service.store_attachment(
+        db, item, filename, "text/html", payload.snapshotContent.encode("utf-8")
     )
-
-    attachment = Attachment(
-        item_id=item.id,
-        filename=storage_path.split("/")[-1],
-        content_type="text/html",
-        size=len(payload.snapshotContent.encode("utf-8")),
-        storage_path=storage_path,
-    )
-    db.add(attachment)
-    db.flush()
 
     _save_session(session, db)
     return {}

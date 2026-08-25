@@ -68,6 +68,10 @@ GET    /api/v1/attachments/{attachment_id}/file
 ```
 
 Upload uses multipart form data with a `file` field plus optional metadata.
+Uploads are deduplicated by the rendered target path: re-uploading identical
+content for the same item returns `409 Conflict` with
+`detail.existing_item_id` / `existing_item_title` / `existing_attachment_id`
+identifying the duplicate.
 
 ---
 

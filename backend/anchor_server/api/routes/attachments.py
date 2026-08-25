@@ -1,7 +1,6 @@
 """Attachment endpoints."""
 
 import uuid
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import PlainTextResponse, Response
@@ -10,7 +9,7 @@ from sqlalchemy.orm import Session
 from anchor_server.database import get_db
 from anchor_server.models import Attachment, Item, utc_now
 from anchor_server.schemas import AttachmentOut
-from anchor_server.services import markdown_service, storage
+from anchor_server.services import attachment_service, markdown_service, storage
 
 router = APIRouter(tags=["attachments"])
 
@@ -80,19 +79,21 @@ def upload_attachment(
         raise HTTPException(status_code=400, detail="Missing filename")
 
     data = file.file.read()
-    relative_path = storage.save_attachment(
-        item, file.filename, file.content_type, data
-    )
-    rendered_name = Path(relative_path).name
-
-    attachment = Attachment(
-        item_id=item_id,
-        filename=rendered_name,
-        content_type=file.content_type,
-        size=len(data),
-        storage_path=relative_path,
-    )
-    db.add(attachment)
+    try:
+        attachment = attachment_service.store_attachment(
+            db, item, file.filename, file.content_type, data
+        )
+    except attachment_service.DuplicateAttachmentError as exc:
+        existing = exc.existing
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": str(exc),
+                "existing_item_id": str(existing.item_id),
+                "existing_item_title": existing.item.title if existing.item else None,
+                "existing_attachment_id": str(existing.id),
+            },
+        ) from exc
     db.commit()
     db.refresh(attachment)
     return attachment

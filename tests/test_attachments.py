@@ -241,3 +241,90 @@ def test_attachment_availability_flags(client: TestClient, db_session, item_id):
     by_name = {a["filename"]: a for a in attachments}
     assert by_name["ghost.pdf"]["available"] is True
     assert by_name["ghost.pdf"]["size_mismatch"] is True
+
+
+def test_upload_duplicate_content_rejected(client: TestClient, item_id):
+    """Re-saving the same item with identical content returns 409."""
+    first = client.post(
+        f"/api/v1/items/{item_id}/attachments",
+        files={"file": ("dup.pdf", BytesIO(b"same bytes"), "application/pdf")},
+    )
+    assert first.status_code == 201
+
+    # Same item, same content: renders the same target path — a duplicate.
+    response = client.post(
+        f"/api/v1/items/{item_id}/attachments",
+        files={"file": ("dup.pdf", BytesIO(b"same bytes"), "application/pdf")},
+    )
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["existing_item_id"] == item_id
+    assert detail["existing_item_title"] == "Paper With Attachments"
+    assert detail["existing_attachment_id"] == first.json()["id"]
+
+
+def test_same_content_on_other_item_allowed(client: TestClient, item_id):
+    """Dedup is keyed by the rendered path: a different item is not a dupe."""
+    first = client.post(
+        f"/api/v1/items/{item_id}/attachments",
+        files={"file": ("dup.pdf", BytesIO(b"same bytes"), "application/pdf")},
+    )
+    assert first.status_code == 201
+
+    other = client.post(
+        "/api/v1/items/",
+        json={"title": "Other Paper", "item_type": "journalArticle"},
+    ).json()
+    response = client.post(
+        f"/api/v1/items/{other['id']}/attachments",
+        files={"file": ("dup2.pdf", BytesIO(b"same bytes"), "application/pdf")},
+    )
+    assert response.status_code == 201
+
+
+def test_upload_adopts_orphan_file(client: TestClient, item_id):
+    """An on-disk file with no live attachment should be reused, not suffixed."""
+    from anchor_server.config import settings
+
+    orphan = settings.attachments_dir / "pdfs/2024_smith_paper_with_attachments.pdf"
+    orphan.parent.mkdir(parents=True, exist_ok=True)
+    orphan.write_bytes(b"orphan content")
+
+    response = client.post(
+        f"/api/v1/items/{item_id}/attachments",
+        files={"file": ("whatever.pdf", BytesIO(b"orphan content"), "application/pdf")},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["storage_path"] == "pdfs/2024_smith_paper_with_attachments.pdf"
+    assert data["filename"] == "2024_smith_paper_with_attachments.pdf"
+
+
+def test_upload_same_name_different_content_suffixed(client: TestClient, item_id):
+    """Different content colliding on the rendered name still gets a counter."""
+    first = client.post(
+        f"/api/v1/items/{item_id}/attachments",
+        files={"file": ("a.pdf", BytesIO(b"content a"), "application/pdf")},
+    ).json()
+    second = client.post(
+        f"/api/v1/items/{item_id}/attachments",
+        files={"file": ("b.pdf", BytesIO(b"content b"), "application/pdf")},
+    )
+    assert second.status_code == 201
+    assert first["filename"] == "2024_smith_paper_with_attachments.pdf"
+    assert second.json()["filename"] == "2024_smith_paper_with_attachments_1.pdf"
+
+
+def test_upload_after_delete_not_duplicate(client: TestClient, item_id):
+    """Re-uploading content whose attachment was deleted should succeed."""
+    created = client.post(
+        f"/api/v1/items/{item_id}/attachments",
+        files={"file": ("gone.pdf", BytesIO(b"deleted bytes"), "application/pdf")},
+    ).json()
+    assert client.delete(f"/api/v1/attachments/{created['id']}").status_code == 204
+
+    response = client.post(
+        f"/api/v1/items/{item_id}/attachments",
+        files={"file": ("gone.pdf", BytesIO(b"deleted bytes"), "application/pdf")},
+    )
+    assert response.status_code == 201
