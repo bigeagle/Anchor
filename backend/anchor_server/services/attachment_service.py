@@ -37,16 +37,20 @@ class DuplicateAttachmentError(ValueError):
         )
 
 
-def store_attachment(
+def find_duplicate(
     db: Session,
     item: Item,
     filename: str,
     content_type: str | None,
     data: bytes,
-) -> Attachment:
-    """Store an attachment with dedup; see module docstring."""
-    target = storage.render_target_path(item, filename, content_type)
+) -> Attachment | None:
+    """Return the live attachment at ``item``'s rendered target path whose
+    on-disk content matches ``data`` (by md5), or None.
 
+    Accepts a transient (unpersisted) item so callers can probe before
+    creating rows.
+    """
+    target = storage.render_target_path(item, filename, content_type)
     existing = (
         db.query(Attachment)
         .filter(
@@ -55,14 +59,27 @@ def store_attachment(
         )
         .first()
     )
+    if existing is None:
+        return None
+    path = settings.attachments_dir / target
+    if path.is_file() and storage.md5_hex(path.read_bytes()) == storage.md5_hex(data):
+        return existing
+    return None
+
+
+def store_attachment(
+    db: Session,
+    item: Item,
+    filename: str,
+    content_type: str | None,
+    data: bytes,
+) -> Attachment:
+    """Store an attachment with dedup; see module docstring."""
+    existing = find_duplicate(db, item, filename, content_type, data)
     if existing is not None:
-        path = settings.attachments_dir / target
-        if path.is_file() and storage.md5_hex(path.read_bytes()) == storage.md5_hex(
-            data
-        ):
-            raise DuplicateAttachmentError(existing)
-        # Different content, or the file has not arrived locally yet:
-        # fall through and save with a _N suffix.
+        raise DuplicateAttachmentError(existing)
+    # Different content, or the file has not arrived locally yet:
+    # fall through and save with a _N suffix.
 
     # Tombstone rows included: storage_path is unique, so even soft-deleted
     # rows make their path unavailable for new attachments.

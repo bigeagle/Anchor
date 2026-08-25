@@ -289,3 +289,60 @@ def test_delay_sync_is_noop(client: TestClient):
     response = client.post("/connector/delaySync", json={})
     assert response.status_code == 200
     assert response.json() == {}
+
+
+def test_save_attachment_duplicate_is_idempotent(
+    client: TestClient, article_payload, db_session
+):
+    """Re-uploading the same attachment should succeed without a new row."""
+    client.post("/connector/saveItems", json=article_payload)
+
+    metadata = json.dumps(
+        {
+            "id": "att1",
+            "parentItemID": "item1",
+            "title": "Full Text PDF",
+            "contentType": "application/pdf",
+        }
+    )
+    for _ in range(2):
+        response = client.post(
+            "/connector/saveAttachment?sessionID=test-session-1",
+            content=b"pdf content",
+            headers={"Content-Type": "application/pdf", "X-Metadata": metadata},
+        )
+        assert response.status_code == 200
+
+    attachments = db_session.query(Attachment).all()
+    assert len(attachments) == 1
+
+    session = (
+        db_session.query(ConnectorSession)
+        .filter(ConnectorSession.session_id == "test-session-1")
+        .first()
+    )
+    assert session.attachment_map["att1"] == str(attachments[0].id)
+    assert session.pending_attachments == []
+
+
+def test_save_standalone_attachment_duplicate_reuses_item(
+    client: TestClient, db_session
+):
+    """Re-saving a standalone attachment should not create a duplicate item."""
+    metadata = json.dumps(
+        {
+            "url": "https://example.com/standalone.pdf",
+            "title": "Standalone PDF",
+            "contentType": "application/pdf",
+        }
+    )
+    for session_id in ("standalone-1", "standalone-2"):
+        response = client.post(
+            f"/connector/saveStandaloneAttachment?sessionID={session_id}",
+            content=b"standalone pdf",
+            headers={"Content-Type": "application/pdf", "X-Metadata": metadata},
+        )
+        assert response.status_code == 200
+
+    assert db_session.query(Item).count() == 1
+    assert db_session.query(Attachment).count() == 1

@@ -86,9 +86,14 @@ def save_attachment(
         raise ValueError("Parent item not found")
 
     filename = _safe_filename(metadata.title or "attachment", metadata.contentType)
-    attachment = attachment_service.store_attachment(
-        db, item, filename, metadata.contentType, data
-    )
+    try:
+        attachment = attachment_service.store_attachment(
+            db, item, filename, metadata.contentType, data
+        )
+    except attachment_service.DuplicateAttachmentError as exc:
+        # Re-save of an already-stored attachment: idempotent success, the
+        # browser extension should not see an error.
+        attachment = exc.existing
 
     attachment_map = dict(session.attachment_map)
     attachment_map[metadata.id] = str(attachment.id)
@@ -112,6 +117,28 @@ def save_standalone_attachment(
     """Create a parent item for a standalone attachment and store the file."""
     session = get_or_create_session(db, session_id)
 
+    # Register the new item in the session map so progress can reference it.
+    standalone_key = metadata.url or metadata.title or "standalone"
+
+    filename = _safe_filename(metadata.title or "attachment", metadata.contentType)
+
+    # Probe with a transient item first: if this exact file was already saved,
+    # point the session at the existing item instead of creating a duplicate.
+    probe = Item(
+        title=metadata.title or metadata.url or "Untitled",
+        item_type="document",
+        url=metadata.url,
+    )
+    existing = attachment_service.find_duplicate(
+        db, probe, filename, metadata.contentType, data
+    )
+    if existing is not None:
+        item_map = dict(session.item_map)
+        item_map[standalone_key] = str(existing.item_id)
+        session.item_map = item_map
+        _save_session(session, db)
+        return {"canRecognize": False}
+
     item = Item(
         title=metadata.title or metadata.url or "Untitled",
         item_type="document",
@@ -120,13 +147,10 @@ def save_standalone_attachment(
     db.add(item)
     db.flush()
 
-    # Register the new item in the session map so progress can reference it.
-    standalone_key = metadata.url or metadata.title or "standalone"
     item_map = dict(session.item_map)
     item_map[standalone_key] = str(item.id)
     session.item_map = item_map
 
-    filename = _safe_filename(metadata.title or "attachment", metadata.contentType)
     attachment_service.store_attachment(db, item, filename, metadata.contentType, data)
 
     _save_session(session, db)
@@ -160,9 +184,13 @@ def save_single_file(
         raise ValueError("Parent item not found")
 
     filename = _safe_filename(payload.title or "snapshot", "text/html") + ".html"
-    attachment_service.store_attachment(
-        db, item, filename, "text/html", payload.snapshotContent.encode("utf-8")
-    )
+    try:
+        attachment_service.store_attachment(
+            db, item, filename, "text/html", payload.snapshotContent.encode("utf-8")
+        )
+    except attachment_service.DuplicateAttachmentError:
+        # Identical snapshot already stored: idempotent success.
+        pass
 
     _save_session(session, db)
     return {}

@@ -246,8 +246,9 @@ collides on the same path):
 
 - If a live attachment already claims the target path and the on-disk file
   has identical content (md5 computed on the spot), the write is rejected
-  (`DuplicateAttachmentError`; the API returns 409 with the existing
-  attachment and item ids/title) — the item is very likely being saved twice.
+  (`DuplicateAttachmentError`). The public API returns 409 with the existing
+  attachment and item ids/title; the Zotero Connector instead treats it as an
+  idempotent success so re-saves don't surface as browser-extension errors.
 - If the target file exists with identical content but no attachment row
   claims the path (e.g. delivered out-of-band by Syncthing), the file is
   adopted instead of writing a copy.
