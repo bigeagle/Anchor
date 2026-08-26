@@ -108,7 +108,7 @@ watch(() => props.itemId, load);
       <p>笔记尚未同步到本机（等待 Syncthing 送达）</p>
     </div>
     <!-- eslint-disable-next-line vue/no-v-html -->
-    <div v-else class="note-body mx-auto max-w-3xl px-8 py-6" v-html="html"></div>
+    <div v-else class="note-body mx-auto max-w-5xl px-8 py-6" v-html="html"></div>
   </div>
 </template>
 
