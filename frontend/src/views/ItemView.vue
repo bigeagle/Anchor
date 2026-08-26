@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import AttachmentViewer from '@/components/AttachmentViewer.vue';
 import NoteViewer from '@/components/NoteViewer.vue';
@@ -22,6 +23,9 @@ const props = defineProps<{
   id: string;
 }>();
 
+const route = useRoute();
+const router = useRouter();
+
 const item = ref<Item | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -40,6 +44,58 @@ const activeAttachment = computed<Attachment | null>(() => {
 
 const noteFileName = computed(() => item.value?.note_path?.split('/').pop() ?? '');
 
+// The viewer state is mirrored into the URL query (?attachment=<id> or
+// ?view=note) so a specific PDF or note can be linked/bookmarked directly.
+
+function viewerQuery(): Record<string, string> {
+  if (noteActive.value) return { view: 'note' };
+  if (activeAttachmentId.value) return { attachment: activeAttachmentId.value };
+  return {};
+}
+
+function syncUrl() {
+  const q = viewerQuery();
+  const current = route.query;
+  if (q.view === current.view && q.attachment === current.attachment) return;
+  if (!q.view && !q.attachment && !current.view && !current.attachment) return;
+  router.replace({ query: q });
+}
+
+/** Default selection: PDF first, then any viewable file, then the note. */
+function applyDefault() {
+  const attachments = item.value?.attachments ?? [];
+  const preferred = attachments.find(isPdf) ?? attachments.find(isViewable);
+  if (preferred) {
+    activeAttachmentId.value = preferred.id;
+    noteActive.value = false;
+  } else if (item.value?.note_available) {
+    activeAttachmentId.value = null;
+    noteActive.value = true;
+  } else {
+    activeAttachmentId.value = null;
+    noteActive.value = false;
+  }
+}
+
+/** Restore viewer state from the URL query, falling back to the default. */
+function applyQuery() {
+  if (!item.value) return;
+  if (route.query.view === 'note' && item.value.note_available) {
+    noteActive.value = true;
+    activeAttachmentId.value = null;
+    return;
+  }
+  if (typeof route.query.attachment === 'string') {
+    const target = viewableAttachments.value.find((a) => a.id === route.query.attachment);
+    if (target) {
+      activeAttachmentId.value = target.id;
+      noteActive.value = false;
+      return;
+    }
+  }
+  applyDefault();
+}
+
 async function fetchItem() {
   loading.value = true;
   error.value = null;
@@ -50,13 +106,8 @@ async function fetchItem() {
     const data = await api.getItem(props.id);
     item.value = data;
     document.title = `${data.title} - Anchor 资料库`;
-    // Prefer opening a PDF first; then any viewable file; then the note.
-    const preferred = data.attachments.find(isPdf) ?? data.attachments.find(isViewable);
-    if (preferred) {
-      activeAttachmentId.value = preferred.id;
-    } else if (data.note_available) {
-      noteActive.value = true;
-    }
+    applyQuery();
+    syncUrl();
   } catch (err) {
     console.error('Failed to load item:', err);
     error.value = '条目加载失败或不存在。';
@@ -69,11 +120,13 @@ async function fetchItem() {
 function openAttachment(attachmentId: string) {
   activeAttachmentId.value = attachmentId;
   noteActive.value = false;
+  syncUrl();
 }
 
 function openNote() {
   noteActive.value = true;
   activeAttachmentId.value = null;
+  syncUrl();
 }
 
 function attachmentBadge(attachment: Attachment): { text: string; cls: string } {
@@ -97,6 +150,15 @@ function arxivUrl(arxivId: string): string {
 
 onMounted(fetchItem);
 watch(() => props.id, fetchItem);
+// React to back/forward navigation or manual query edits while on the page.
+watch(
+  () => route.query,
+  () => {
+    if (!item.value) return;
+    applyQuery();
+    syncUrl();
+  },
+);
 </script>
 
 <template>
