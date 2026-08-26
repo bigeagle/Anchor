@@ -10,6 +10,10 @@ import { katexExtensions } from '@/utils/katex';
 
 // Render $...$ / $$...$$ math; see utils/katex.ts for the delimiter rules.
 marked.use({ extensions: katexExtensions });
+// GFM-style line breaks: a single newline in the source renders as <br>,
+// matching how Obsidian displays metadata-ish blocks (e.g. a blockquote
+// with one field per line) instead of collapsing lines into one paragraph.
+marked.use({ breaks: true });
 
 const props = defineProps<{
   itemId: string;
