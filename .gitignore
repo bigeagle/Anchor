@@ -49,8 +49,8 @@ htmlcov/
 *.swo
 *~
 
-# AI tools
-.kimi-code/
+# AI tools (no trailing slash so it also matches a symlink)
+.kimi-code
 
 # OS
 .DS_Store
