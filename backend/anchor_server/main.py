@@ -2,9 +2,11 @@
 
 import asyncio
 import logging
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import uvicorn
 from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -97,4 +99,19 @@ if _index_file.is_file():
         "/",
         SPAStaticFiles(directory=settings.frontend_dist_dir, html=True),
         name="frontend",
+    )
+
+
+def run() -> None:
+    """Start uvicorn with host/port taken from settings.
+
+    Keeps ANCHOR_PORT (repo-root .env) as the single source of truth for the
+    listen port — the vite dev proxy reads the same value. Pass --reload for
+    development auto-reload.
+    """
+    uvicorn.run(
+        "anchor_server.main:app",
+        host=settings.host,
+        port=settings.port,
+        reload="--reload" in sys.argv,
     )

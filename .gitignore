@@ -49,6 +49,9 @@ htmlcov/
 *.swo
 *~
 
+# AI tools
+.kimi-code/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -48,17 +48,15 @@ Run database migrations:
 uv run alembic upgrade head
 ```
 
-Start the backend server for development (uses `.env.dev` to keep data separate
-from production):
+Start the backend server for development:
 
 ```bash
-uv run --env-file .env.dev uvicorn anchor_server.main:app --reload
+uv run anchor-server --reload
 ```
 
-The API will be available at `http://127.0.0.1:23119/api/v1`. Interactive API
-docs are at `/docs`.
-
-To start with the production `.env` instead, omit `--env-file .env.dev`.
+The listen port comes from `ANCHOR_PORT` in the repo-root `.env` (default
+23119); the vite dev proxy reads the same value. The API is then available at
+`http://127.0.0.1:<ANCHOR_PORT>/api/v1`. Interactive API docs are at `/docs`.
 
 Start the web frontend (Vue 3 + Vite + Tailwind). The dev server proxies `/api`
 to the backend, so the backend must be running:
