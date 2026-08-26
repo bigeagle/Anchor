@@ -5,6 +5,7 @@ import { marked } from 'marked';
 import { computed, onMounted, ref, watch } from 'vue';
 
 import { api } from '@/services/api';
+import { renderFrontMatter, splitFrontMatter } from '@/utils/frontMatter';
 import { katexExtensions } from '@/utils/katex';
 
 // Render $...$ / $$...$$ math; see utils/katex.ts for the delimiter rules.
@@ -71,8 +72,11 @@ async function load() {
   failed.value = false;
   try {
     const markdown = await api.getItemNote(props.itemId);
-    const rendered = marked.parse(preprocess(markdown), { async: false });
-    html.value = DOMPurify.sanitize(rendered);
+    const { frontMatter, body } = splitFrontMatter(markdown);
+    const rendered = marked.parse(preprocess(body), { async: false });
+    const clean = DOMPurify.sanitize(rendered);
+    html.value =
+      (frontMatter !== null ? renderFrontMatter(frontMatter) : '') + clean;
   } catch (err) {
     console.error('Failed to load note:', err);
     failed.value = true;
@@ -110,6 +114,39 @@ watch(() => props.itemId, load);
   color: var(--color-gray-800);
   font-size: 0.9375rem;
   line-height: 1.7;
+}
+/* YAML front matter rendered as a read-only properties card. */
+.note-body :deep(.front-matter) {
+  margin-bottom: 1.5em;
+  padding: 0.6em 1em;
+  background: var(--color-gray-50);
+  border: 1px solid var(--color-gray-200);
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+}
+.note-body :deep(.fm-row) {
+  display: flex;
+  gap: 1em;
+  padding: 0.15em 0;
+  line-height: 1.5;
+}
+.note-body :deep(.fm-key) {
+  flex-shrink: 0;
+  width: 7em;
+  color: var(--color-gray-400);
+  overflow-wrap: break-word;
+}
+.note-body :deep(.fm-value) {
+  min-width: 0;
+  color: var(--color-gray-700);
+  overflow-wrap: break-word;
+}
+.note-body :deep(.front-matter pre) {
+  margin: 0;
+  padding: 0;
+  background: none;
+  font-size: inherit;
+  white-space: pre-wrap;
 }
 .note-body :deep(h1),
 .note-body :deep(h2),
