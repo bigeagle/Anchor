@@ -122,7 +122,10 @@ refuse to operate across a mismatch:
 - Before pushing or pulling, a device pre-flights `GET /sync/status` on the
   central and checks `role == "central"` and `protocol_version`. A mismatch
   (including an old central whose status lacks the field) halts the device
-  with `sync_state.last_error = "protocol_mismatch"`.
+  with `sync_state.last_error = "protocol_mismatch"`. Because upgrade skew
+  is transient, this halt is re-checked on every sync attempt and clears
+  itself once both sides run the same version again — unlike
+  `cursor_mismatch`, which always requires manual re-anchoring.
 
 This turns upgrade skew (one side updated, the other not) into an explicit,
 visible halt instead of undefined behavior.

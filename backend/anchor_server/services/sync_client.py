@@ -134,40 +134,72 @@ def _verify_central(http: httpx.Client) -> str | None:
 
 
 def _halt(db: Session, error: str, message: str) -> None:
-    """Stop all syncing until the deployment is fixed and the device re-anchored."""
+    """Stop syncing after a fatal central-side condition.
+
+    ``cursor_mismatch`` halts are permanent until manual re-anchoring (delete
+    the sync_state row and restart). ``protocol_mismatch`` halts are
+    re-checked against the central on every sync attempt and clear themselves
+    once both sides run the same protocol version again — upgrade skew is
+    transient by nature (see ``_preflight``).
+    """
     state = get_sync_state(db)
     if state.last_error == error:
         return
     state.last_error = error
     db.commit()
-    logger.error(
-        "%s Syncing is halted; fix the deployment, then delete the "
-        "sync_state row and restart to re-anchor this device.",
-        message,
+    hint = (
+        "syncing resumes automatically once both sides run the same protocol version"
+        if error == "protocol_mismatch"
+        else "fix the deployment, then delete the sync_state row and restart "
+        "to re-anchor this device"
+    )
+    logger.error("%s Syncing is halted; %s.", message, hint)
+
+
+def _sticky_halted(db: Session) -> bool:
+    """True when halted in a way that requires manual re-anchoring.
+
+    ``cursor_mismatch`` (and ``not_a_central``) stay until the deployment is
+    fixed and the device re-anchored: stop the server, delete the sync_state
+    row (and any outbox rows), restart. ``protocol_mismatch`` is excluded —
+    it recovers through ``_preflight`` once versions converge.
+    """
+    state = db.get(SyncState, 1)
+    return (
+        state is not None
+        and state.last_error is not None
+        and state.last_error != "protocol_mismatch"
     )
 
 
-def is_halted(db: Session) -> bool:
-    """True when syncing has halted after a cursor mismatch.
+def _preflight(db: Session, http: httpx.Client) -> bool:
+    """Pre-flight the central and manage protocol_mismatch halt state.
 
-    Halting requires manual re-anchoring: stop the server, delete the
-    sync_state row (and any outbox rows), restart. The first sync then
-    re-uploads the whole library to the (new) central.
+    Returns True when syncing cannot proceed: a mismatch (re)halts the
+    device; a match after a protocol_mismatch halt clears the error and
+    resumes — upgrade skew is transient by nature.
     """
-    state = db.get(SyncState, 1)
-    return state is not None and state.last_error is not None
+    error = _verify_central(http)
+    if error is not None:
+        _halt(db, error, f"central pre-flight failed ({error}).")
+        return True
+    state = get_sync_state(db)
+    if state.last_error == "protocol_mismatch":
+        state.last_error = None
+        db.commit()
+        logger.info("central protocol version matches again; sync resumed")
+    return False
 
 
 def push_pending(db: Session, http: httpx.Client) -> int:
     """Push all pending outbox entries; delete them once acknowledged."""
-    if is_halted(db):
+    if _sticky_halted(db):
         return 0
     state = get_sync_state(db)  # first call backfills the standalone library
     entries = db.query(OutboxEntry).order_by(OutboxEntry.id).all()
     if not entries:
         return 0
-    if error := _verify_central(http):
-        _halt(db, error, f"central pre-flight failed ({error}).")
+    if _preflight(db, http):
         return 0
     body = {
         "device_id": state.device_id,
@@ -210,14 +242,14 @@ def pull_changes(db: Session, http: httpx.Client) -> int:
     crash mid-apply simply re-fetches the same entries (apply is idempotent).
     A 410 means the cursor fell behind retained history: re-bootstrap.
     A 409 means the oplog chain does not match (wrong central or rolled-back
-    oplog) and a 426 means a protocol version mismatch: both halt syncing and
-    wait for manual re-anchoring — auto-bootstrapping here could wipe the
-    local library if the new central is empty.
+    oplog): halts until manual re-anchoring — auto-bootstrapping here could
+    wipe the local library if the new central is empty. A 426 means a
+    protocol version mismatch: halts too, but recovers automatically once
+    both sides run the same protocol version again.
     """
-    if is_halted(db):
+    if _sticky_halted(db):
         return 0
-    if error := _verify_central(http):
-        _halt(db, error, f"central pre-flight failed ({error}).")
+    if _preflight(db, http):
         return -2
     state = get_sync_state(db)
     if state.last_seq and state.last_checksum is None:

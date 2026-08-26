@@ -341,3 +341,61 @@ def test_device_rejects_non_central_url(device: TestClient, db_session):
 
     assert sync_client.pull_changes(db_session, NotCentralStub()) == -2
     assert sync_client.get_sync_state(db_session).last_error == "not_a_central"
+
+
+class CurrentCentralStub:
+    """Simulates an up-to-date central: current protocol, accepts pushes."""
+
+    def __init__(self):
+        self.status_calls = 0
+        self.push_calls = 0
+
+    def get(self, url, **kwargs):
+        assert url == "/api/v1/sync/status"
+        self.status_calls += 1
+        return httpx.Response(
+            200,
+            json={"role": "central", "protocol_version": SYNC_PROTOCOL_VERSION},
+            request=httpx.Request("GET", f"http://central{url}"),
+        )
+
+    def post(self, url, **kwargs):
+        assert url == "/api/v1/sync/push"
+        self.push_calls += 1
+        return httpx.Response(
+            200,
+            json={"applied": 1, "latest_seq": 8},
+            request=httpx.Request("POST", f"http://central{url}"),
+        )
+
+
+def test_protocol_mismatch_recovers_automatically(device: TestClient, db_session):
+    """A protocol_mismatch halt clears itself once the central catches up."""
+    device.post("/api/v1/items/", json={"title": "Pending Push"})
+
+    # Halt against an old central, like a device upgraded before its central.
+    assert sync_client.pull_changes(db_session, OldCentralStub()) == -2
+    assert sync_client.get_sync_state(db_session).last_error == "protocol_mismatch"
+
+    # The central is upgraded: the next attempt clears the error and pushes.
+    central = CurrentCentralStub()
+    assert sync_client.push_pending(db_session, central) == 1
+    assert central.status_calls == 1
+    assert central.push_calls == 1
+    assert sync_client.get_sync_state(db_session).last_error is None
+    assert db_session.query(OutboxEntry).count() == 0
+
+
+def test_cursor_mismatch_stays_halted(device: TestClient, db_session):
+    """A cursor_mismatch halt never auto-recovers, not even a pre-flight."""
+    device.post("/api/v1/items/", json={"title": "Pending Push"})
+    state = sync_client.get_sync_state(db_session)
+    state.last_error = "cursor_mismatch"
+    db_session.commit()
+
+    central = CurrentCentralStub()
+    assert sync_client.push_pending(db_session, central) == 0
+    assert central.status_calls == 0  # sticky halt: the central is not asked
+    assert central.push_calls == 0
+    assert db_session.query(OutboxEntry).count() == 1
+    assert sync_client.get_sync_state(db_session).last_error == "cursor_mismatch"

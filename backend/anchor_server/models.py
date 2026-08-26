@@ -111,8 +111,9 @@ class SyncState(Base):
 
     The pull cursor (`last_seq`, `last_checksum`) must commit in the same
     transaction as the applied changes, so it lives in the same database,
-    not a state file. `last_error` set to "cursor_mismatch" halts syncing
-    until the row is deleted (manual re-anchor).
+    not a state file. `last_error` halts syncing: "cursor_mismatch" until
+    the row is deleted (manual re-anchor), "protocol_mismatch" only until
+    the central reports a matching protocol version again (auto-recovery).
     """
 
     __tablename__ = "sync_state"
