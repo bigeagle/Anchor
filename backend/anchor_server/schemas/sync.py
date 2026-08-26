@@ -7,8 +7,9 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 # Bump on any incompatible change to the sync protocol or synced schema.
-# 1 = initial oplog protocol; 2 = chained checksums + 409/410 semantics.
-SYNC_PROTOCOL_VERSION = 2
+# 1 = initial oplog protocol; 2 = chained checksums + 409/410 semantics;
+# 3 = items.note_path (linked markdown note).
+SYNC_PROTOCOL_VERSION = 3
 
 # Header devices send on every sync request; the central rejects mismatches.
 SYNC_PROTOCOL_HEADER = "X-Anchor-Sync-Protocol"

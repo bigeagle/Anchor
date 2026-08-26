@@ -77,6 +77,17 @@ def post_json(path: str, payload: dict) -> dict:
     return response.json()
 
 
+def put_json(path: str, payload: dict) -> dict:
+    response = requests.put(
+        _url(path),
+        json=payload,
+        headers=request_headers(),
+        timeout=30,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 def post_item_with_attachment(metadata: dict, filename: str, data: bytes) -> dict:
     """Create an item and its first PDF attachment atomically.
 
@@ -153,6 +164,53 @@ def cmd_text(args: argparse.Namespace) -> int:
         sys.stdout.write(text)
     except BrokenPipeError:
         pass
+    return 0
+
+
+def cmd_note(args: argparse.Namespace) -> int:
+    """Print the raw markdown of the item's linked note."""
+    response = requests.get(
+        _url(f"items/{args.item_id}/note"), headers=request_headers(), timeout=30
+    )
+    if response.status_code == 404:
+        detail = response.json().get("detail", "not found")
+        print(f"Error: {detail}", file=sys.stderr)
+        return 1
+    response.raise_for_status()
+    try:
+        sys.stdout.write(response.text)
+    except BrokenPipeError:
+        pass
+    return 0
+
+
+def cmd_link_note(args: argparse.Namespace) -> int:
+    """Link a markdown note to an item (or clear the link with --clear).
+
+    ``path`` is relative to the server's notes root (ANCHOR_NOTES_DIR); the
+    file itself is expected to exist there already (Syncthing delivers it).
+    """
+    if args.clear:
+        note_path = None
+    else:
+        note_path = args.path
+        if note_path is None:
+            print("Error: provide a note path or --clear", file=sys.stderr)
+            return 1
+        if note_path.startswith("/") or ".." in Path(note_path).parts:
+            print(
+                "Error: note path must be relative to the notes root (no '..')",
+                file=sys.stderr,
+            )
+            return 1
+    item = put_json(f"items/{args.item_id}", {"note_path": note_path})
+    print_json(
+        {
+            "item_id": item["id"],
+            "note_path": item["note_path"],
+            "note_available": item["note_available"],
+        }
+    )
     return 0
 
 
@@ -529,6 +587,27 @@ def main() -> int:
     )
     text_parser.add_argument("attachment_id")
     text_parser.set_defaults(func=cmd_text)
+
+    note_parser = subparsers.add_parser(
+        "note", help="Print the raw markdown of the item's linked note"
+    )
+    note_parser.add_argument("item_id")
+    note_parser.set_defaults(func=cmd_note)
+
+    link_note_parser = subparsers.add_parser(
+        "link-note", help="Link a markdown note to an item (or clear the link)"
+    )
+    link_note_parser.add_argument("item_id")
+    link_note_parser.add_argument(
+        "path",
+        nargs="?",
+        default=None,
+        help="Note file path relative to the notes root, e.g. papers/foo.md",
+    )
+    link_note_parser.add_argument(
+        "--clear", action="store_true", help="Remove the note link"
+    )
+    link_note_parser.set_defaults(func=cmd_link_note)
 
     import_parser = subparsers.add_parser(
         "import-pdf", help="Create an item and upload a PDF attachment"

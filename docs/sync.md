@@ -127,7 +127,8 @@ refuse to operate across a mismatch:
 This turns upgrade skew (one side updated, the other not) into an explicit,
 visible halt instead of undefined behavior.
 
-History: 1 = initial oplog protocol; 2 = chained checksums + 409/410/426.
+History: 1 = initial oplog protocol; 2 = chained checksums + 409/410/426;
+3 = items.note_path (linked markdown note).
 
 The oplog is also the durability backstop for LWW, so it cannot be trimmed
 blindly. Retention policy (e.g. keep 30 days or the last N entries) plus the

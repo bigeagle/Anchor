@@ -46,6 +46,10 @@ export interface Item {
   url: string | null;
   language: string | null;
   extra: Record<string, unknown>;
+  /** Linked markdown note, relative to the server's notes dir; null when none. */
+  note_path: string | null;
+  /** Whether the note file exists locally yet (Syncthing may still deliver it). */
+  note_available: boolean;
   date_added: string;
   date_modified: string;
   version: number;
@@ -90,6 +94,14 @@ async function getJson<T>(url: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function getText(url: string): Promise<string> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+  return response.text();
+}
+
 export const api = {
   listItems(params: ListItemsParams = {}): Promise<Item[]> {
     const search = new URLSearchParams();
@@ -108,6 +120,30 @@ export const api = {
   /** Inline view URL for an attachment's raw file (PDF / HTML). */
   attachmentFileUrl(attachmentId: string): string {
     return `${API_BASE}/attachments/${attachmentId}`;
+  },
+
+  /** Raw markdown of the item's linked note (Obsidian-style). */
+  getItemNote(itemId: string): Promise<string> {
+    return getText(`${API_BASE}/items/${itemId}/note`);
+  },
+
+  /** URL for an image inside the notes dir (note embeds). */
+  noteAssetUrl(path: string): string {
+    // Obsidian may percent-encode paths in standard image syntax; normalize
+    // before re-encoding so `%20` does not become `%2520`.
+    const encode = (segment: string): string => {
+      try {
+        return encodeURIComponent(decodeURIComponent(segment));
+      } catch {
+        return encodeURIComponent(segment);
+      }
+    };
+    return `${API_BASE}/notes/assets/${path.split('/').map(encode).join('/')}`;
+  },
+
+  /** URL for an image looked up by bare filename anywhere in the notes dir. */
+  noteAssetLookupUrl(filename: string): string {
+    return `${API_BASE}/notes/lookup/${encodeURIComponent(filename)}`;
   },
 
   getSyncStatus(): Promise<SyncStatus> {

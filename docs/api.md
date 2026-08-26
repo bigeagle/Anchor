@@ -79,6 +79,28 @@ Uploads are idempotent: re-uploading identical content for the same item
 (same rendered path) returns `200 OK` with the existing attachment instead of
 creating a duplicate.
 
+### Linked markdown notes
+
+Each item can link one Obsidian-style markdown file living under the
+server-configured notes root (`ANCHOR_NOTES_DIR`). The link is the item's
+`note_path` field (path relative to the notes root), set via
+`PUT /api/v1/items/{item_id}`; `note_available` on the item reports whether
+the file exists locally. Note and image files sync out-of-band (Syncthing),
+exactly like attachment bytes.
+
+```text
+GET /api/v1/items/{item_id}/note        # raw markdown (text/markdown)
+GET /api/v1/notes/assets/{path}         # image at a root-relative path
+GET /api/v1/notes/lookup/{filename}     # image found by bare filename
+```
+
+The note endpoint 404s when no note is linked or the file has not arrived
+locally yet; the asset endpoints only serve common image extensions and
+reject paths escaping the notes root. `lookup` backs Obsidian-style embeds
+(`![[image.png]]`), which resolve vault-wide by name; embeds with a
+directory part (`![[dir/image.png]]`) and standard relative image paths go
+through `assets`.
+
 ---
 
 ## Phase 2.1 — Zotero Connector: basic save workflow
@@ -191,6 +213,9 @@ DELETE /api/v1/items/{item_id}/tags/{tag_id}
 ```
 
 ### Notes
+
+Editable notes CRUD (the linked-markdown notes above are read-only and already
+implemented):
 
 ```text
 GET    /api/v1/items/{item_id}/notes

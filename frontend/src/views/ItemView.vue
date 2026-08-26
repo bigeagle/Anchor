@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 
 import AttachmentViewer from '@/components/AttachmentViewer.vue';
+import NoteViewer from '@/components/NoteViewer.vue';
 import {
   api,
   isPdf,
@@ -25,6 +26,7 @@ const item = ref<Item | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const activeAttachmentId = ref<string | null>(null);
+const noteActive = ref(false);
 const metadataCollapsed = ref(false);
 
 const viewableAttachments = computed<Attachment[]>(() =>
@@ -36,18 +38,25 @@ const activeAttachment = computed<Attachment | null>(() => {
   return viewableAttachments.value.find((a) => a.id === activeAttachmentId.value) ?? null;
 });
 
+const noteFileName = computed(() => item.value?.note_path?.split('/').pop() ?? '');
+
 async function fetchItem() {
   loading.value = true;
   error.value = null;
   item.value = null;
   activeAttachmentId.value = null;
+  noteActive.value = false;
   try {
     const data = await api.getItem(props.id);
     item.value = data;
     document.title = `${data.title} - Anchor 资料库`;
-    // Prefer opening a PDF first; otherwise fall back to the first viewable file.
+    // Prefer opening a PDF first; then any viewable file; then the note.
     const preferred = data.attachments.find(isPdf) ?? data.attachments.find(isViewable);
-    activeAttachmentId.value = preferred?.id ?? null;
+    if (preferred) {
+      activeAttachmentId.value = preferred.id;
+    } else if (data.note_available) {
+      noteActive.value = true;
+    }
   } catch (err) {
     console.error('Failed to load item:', err);
     error.value = '条目加载失败或不存在。';
@@ -55,6 +64,16 @@ async function fetchItem() {
   } finally {
     loading.value = false;
   }
+}
+
+function openAttachment(attachmentId: string) {
+  activeAttachmentId.value = attachmentId;
+  noteActive.value = false;
+}
+
+function openNote() {
+  noteActive.value = true;
+  activeAttachmentId.value = null;
 }
 
 function attachmentBadge(attachment: Attachment): { text: string; cls: string } {
@@ -197,6 +216,41 @@ watch(() => props.id, fetchItem);
           </p>
         </div>
 
+        <div v-if="item.note_path" class="mt-6">
+          <h2 class="text-sm font-semibold text-gray-900">笔记</h2>
+          <div class="mt-2">
+            <div
+              v-if="!item.note_available"
+              class="flex w-full items-center gap-2 rounded-lg border border-dashed border-gray-200 px-3 py-2 text-left text-sm text-gray-400"
+              title="笔记文件尚未同步到本机（等待 Syncthing 送达）"
+            >
+              <span class="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs font-semibold text-gray-500">
+                待同步
+              </span>
+              <span class="min-w-0 flex-1 truncate" :title="item.note_path">
+                {{ noteFileName }}
+              </span>
+            </div>
+            <button
+              v-else
+              :class="[
+                'flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors',
+                noteActive
+                  ? 'border-blue-400 bg-blue-50 text-blue-800'
+                  : 'border-gray-200 text-gray-700 hover:bg-gray-50',
+              ]"
+              @click="openNote"
+            >
+              <span class="shrink-0 rounded bg-green-100 px-1.5 py-0.5 text-xs font-semibold text-green-700">
+                MD
+              </span>
+              <span class="min-w-0 flex-1 truncate" :title="item.note_path">
+                {{ noteFileName }}
+              </span>
+            </button>
+          </div>
+        </div>
+
         <div class="mt-6">
           <h2 class="text-sm font-semibold text-gray-900">
             附件 <span class="font-normal text-gray-400">({{ item.attachments.length }})</span>
@@ -227,7 +281,7 @@ watch(() => props.id, fetchItem);
                     ? 'border-blue-400 bg-blue-50 text-blue-800'
                     : 'border-gray-200 text-gray-700 hover:bg-gray-50',
                 ]"
-                @click="activeAttachmentId = attachment.id"
+                @click="openAttachment(attachment.id)"
               >
                 <span
                   :class="[
@@ -284,7 +338,7 @@ watch(() => props.id, fetchItem);
     <section class="order-1 flex min-w-0 flex-1 flex-col bg-gray-100">
       <!-- Viewer toolbar; rendered when there is something to show in it -->
       <div
-        v-if="activeAttachment || metadataCollapsed"
+        v-if="activeAttachment || noteActive || metadataCollapsed"
         class="flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 py-2 text-sm"
       >
         <template v-if="activeAttachment">
@@ -310,6 +364,14 @@ watch(() => props.id, fetchItem);
           >
             新标签页打开 ↗
           </a>
+        </template>
+        <template v-else-if="noteActive">
+          <span class="rounded bg-green-100 px-1.5 py-0.5 text-xs font-semibold text-green-700">
+            MD
+          </span>
+          <span class="min-w-0 flex-1 truncate text-gray-700" :title="item?.note_path ?? ''">
+            {{ noteFileName }}
+          </span>
         </template>
         <span v-else class="flex-1" />
 
@@ -337,13 +399,20 @@ watch(() => props.id, fetchItem);
       </div>
 
       <div class="min-h-0 flex-1">
-        <AttachmentViewer v-if="activeAttachment" :attachment="activeAttachment" />
+        <NoteViewer
+          v-if="noteActive && item"
+          :item-id="item.id"
+          :note-path="item.note_path ?? ''"
+        />
+        <AttachmentViewer v-else-if="activeAttachment" :attachment="activeAttachment" />
         <div
           v-else
           class="flex h-full flex-col items-center justify-center gap-2 text-gray-400"
         >
           <span class="text-5xl">📄</span>
-          <p v-if="viewableAttachments.length">从右侧选择附件查看</p>
+          <p v-if="viewableAttachments.length || item?.note_available">
+            从右侧选择附件或笔记查看
+          </p>
           <p v-else>该条目没有可在线预览的 PDF / HTML 附件</p>
         </div>
       </div>

@@ -13,7 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 from starlette.types import Scope
 
-from anchor_server.api.routes import attachments, items, sync, zotero_connector
+from anchor_server.api.routes import attachments, items, notes, sync, zotero_connector
 from anchor_server.config import settings
 from anchor_server.database import get_db_context
 from anchor_server.security import ensure_api_token, require_auth
@@ -65,6 +65,7 @@ _auth = [Depends(require_auth)]
 app.include_router(items.router, prefix=API_PREFIX, dependencies=_auth)
 app.include_router(items.search_router, prefix=API_PREFIX, dependencies=_auth)
 app.include_router(attachments.router, prefix=API_PREFIX, dependencies=_auth)
+app.include_router(notes.router, prefix=API_PREFIX, dependencies=_auth)
 app.include_router(sync.router, prefix=API_PREFIX, dependencies=_auth)
 app.include_router(zotero_connector.router, dependencies=_auth)
 

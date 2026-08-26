@@ -15,3 +15,4 @@
   ```
 - 多端同步（设计见 `docs/sync.md`）：`ANCHOR_ROLE` 取 `standalone`（默认）/ `central` / `device`；中心端必须开 `ANCHOR_AUTH_ENABLED=true`，设备端配 `ANCHOR_CENTRAL_URL` + `ANCHOR_SYNC_TOKEN`，轮询间隔 `ANCHOR_SYNC_INTERVAL`（默认 30s）
 - 改动同步协议或被同步的 schema（items/attachments 的字段）时，必须 bump `backend/anchor_server/schemas/sync.py` 里的 `SYNC_PROTOCOL_VERSION`；版本不一致时设备端和中心端会互相拒绝运行
+- Notes：每个 item 可通过 `note_path` 字段（相对 `ANCHOR_NOTES_DIR`，默认 `./data/notes`）关联一个 Obsidian 风格 markdown，只读展示、关联仅经 API（PUT item）设置；笔记和图片文件像附件字节一样经 Syncthing 带外同步，DB 只同步 `note_path`

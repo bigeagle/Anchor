@@ -59,8 +59,11 @@ def temp_data_dir(tmp_path, monkeypatch):
     translators_dir.mkdir()
     markdown_cache_dir = (tmp_path / "cache" / "markdown").resolve()
     markdown_cache_dir.mkdir(parents=True)
+    notes_dir = (tmp_path / "notes").resolve()
+    notes_dir.mkdir()
     monkeypatch.setattr(settings, "data_dir", data_dir)
     monkeypatch.setattr(settings, "attachments_dir", attachments_dir)
+    monkeypatch.setattr(settings, "notes_dir", notes_dir)
     monkeypatch.setattr(settings, "translators_dir", translators_dir)
     monkeypatch.setattr(settings, "markdown_cache_dir", markdown_cache_dir)
     # Ensure tests use the default naming template regardless of local .env files.

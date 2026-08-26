@@ -45,6 +45,9 @@ class Item(Base):
     url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     language: Mapped[str | None] = mapped_column(String(32), nullable=True)
     extra: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    # Path (relative to settings.notes_dir) of the linked Obsidian-style
+    # markdown note; the file itself travels out-of-band like attachments.
+    note_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     date_added: Mapped[datetime] = mapped_column(default=utc_now)
     date_modified: Mapped[datetime] = mapped_column(
         default=utc_now,

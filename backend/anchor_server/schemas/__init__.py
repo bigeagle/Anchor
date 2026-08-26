@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validat
 
 from anchor_server.config import settings
 from anchor_server.enums import ItemType
+from anchor_server.services import notes_service
 
 
 class AttachmentOut(BaseModel):
@@ -66,6 +67,10 @@ class ItemBase(BaseModel):
     url: str | None = None
     language: str | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
+    note_path: str | None = Field(
+        default=None,
+        description="Path of the linked markdown note, relative to the notes dir.",
+    )
 
 
 class ItemCreate(ItemBase):
@@ -90,6 +95,7 @@ class ItemUpdate(BaseModel):
     url: str | None = None
     language: str | None = None
     extra: dict[str, Any] | None = None
+    note_path: str | None = None
 
 
 class ItemOut(ItemBase):
@@ -108,3 +114,14 @@ class ItemOut(ItemBase):
     def _drop_deleted_attachments(cls, value: Any) -> Any:
         """Exclude soft-deleted attachments loaded through the ORM relationship."""
         return [a for a in value if getattr(a, "deleted_at", None) is None]
+
+    @computed_field
+    @property
+    def note_available(self) -> bool:
+        """Whether the linked note file exists locally yet (Syncthing may lag)."""
+        if not self.note_path:
+            return False
+        try:
+            return notes_service.resolve_notes_path(self.note_path).is_file()
+        except notes_service.InvalidNotePathError:
+            return False

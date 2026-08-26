@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     attachment_name_template: str = (
         "{{ year }}_{{ authors_last_names }}_{{ title_slug }}"
     )
+    # Root of the Obsidian-style notes vault; each item can link one markdown
+    # file (and its images) under this directory via Item.note_path.
+    notes_dir: Path = Path("./data/notes")
     host: str = "127.0.0.1"
     port: int = 23119  # Same default port as the Zotero local HTTP server
     log_level: str = "info"
@@ -56,6 +59,7 @@ class Settings(BaseSettings):
     @field_validator(
         "data_dir",
         "attachments_dir",
+        "notes_dir",
         "translators_dir",
         "markdown_cache_dir",
         "frontend_dist_dir",
