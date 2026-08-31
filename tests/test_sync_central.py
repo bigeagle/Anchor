@@ -132,6 +132,39 @@ def test_push_lww_overwrite(central: TestClient, db_session):
     assert item.version == 2
 
 
+def test_push_batch_with_duplicate_object_applies_last(central: TestClient, db_session):
+    """Two changes for the same object in one batch must not insert twice.
+
+    Sessions run with autoflush=False, so Session.get cannot see the pending
+    instance from the first change; without a session.new fallback the second
+    change inserts a duplicate row and the commit fails with IntegrityError.
+    """
+    item_id = uuid.uuid4()
+    response = _push(
+        central,
+        [
+            {
+                "object_type": "item",
+                "object_id": str(item_id),
+                "op": "upsert",
+                "payload": _item_payload(item_id, title="First"),
+            },
+            {
+                "object_type": "item",
+                "object_id": str(item_id),
+                "op": "upsert",
+                "payload": _item_payload(item_id, title="Second", version=2),
+            },
+        ],
+    )
+    assert response.status_code == 200
+    assert response.json() == {"applied": 2, "latest_seq": 2}
+
+    item = db_session.get(Item, item_id)
+    assert item.title == "Second"
+    assert item.version == 2
+
+
 def test_push_delete_sets_tombstone(central: TestClient, db_session):
     """A delete change stores the payload's deleted_at on the row."""
     item_id = uuid.uuid4()

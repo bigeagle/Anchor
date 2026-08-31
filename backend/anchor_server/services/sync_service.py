@@ -80,6 +80,14 @@ def apply_change(db: Session, change: ChangeIn) -> None:
     data["id"] = change.object_id
     obj = db.get(model, change.object_id)
     if obj is None:
+        # With autoflush=False, Session.get misses unflushed pending
+        # instances: a second change for the same object in one batch would
+        # insert a duplicate row. Check session.new before adding.
+        obj = next(
+            (o for o in db.new if isinstance(o, model) and o.id == change.object_id),
+            None,
+        )
+    if obj is None:
         db.add(model(**data))
     else:
         for key, value in data.items():
