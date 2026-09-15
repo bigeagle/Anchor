@@ -65,6 +65,8 @@ uv run scripts/anchor_papers.py get <item-id>
 uv run scripts/anchor_papers.py attachments <item-id>
 uv run scripts/anchor_papers.py download <attachment-id> ./paper.pdf
 uv run scripts/anchor_papers.py text <attachment-id>
+uv run scripts/anchor_papers.py convert ./paper.pdf
+uv run scripts/anchor_papers.py convert ./paper.pdf -o ./paper.md
 uv run scripts/anchor_papers.py note <item-id>
 uv run scripts/anchor_papers.py link-note <item-id> papers/foo.md
 uv run scripts/anchor_papers.py link-note <item-id> --clear
@@ -74,6 +76,8 @@ uv run scripts/anchor_papers.py import-pdf ./paper.pdf --title "Paper Title"
 `search` uses `GET /api/v1/search/?q=...` and matches titles, abstracts, authors, identifiers, publication, and other item fields.
 
 The `text` command returns the attachment as Markdown via Anchor's `/attachments/{id}/markdown` endpoint. It works for PDFs and other supported formats.
+
+The `convert` command converts a local file (PDF or other markitdown-supported format) to Markdown locally — no upload, nothing is written to Anchor. It prints to stdout, or to a file with `-o`.
 
 `note` prints the raw markdown of the item's linked note (exit 1 when no note is linked or the file is not local yet). `link-note` sets the item's `note_path` (relative to the notes root, no `..`); the response reports `note_available` — `false` means the file has not synced to this machine yet.
 

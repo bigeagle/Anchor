@@ -167,6 +167,24 @@ def cmd_text(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_convert(args: argparse.Namespace) -> int:
+    """Convert a local PDF (or other supported file) to Markdown."""
+    path = Path(args.path)
+    if not path.is_file():
+        print(f"Error: file not found: {path}", file=sys.stderr)
+        return 1
+    text = MarkItDown().convert(str(path)).text_content
+    if args.output:
+        Path(args.output).write_text(text, "utf-8")
+        print(f"Wrote {len(text)} chars to {args.output}", file=sys.stderr)
+        return 0
+    try:
+        sys.stdout.write(text)
+    except BrokenPipeError:
+        pass
+    return 0
+
+
 def cmd_note(args: argparse.Namespace) -> int:
     """Print the raw markdown of the item's linked note."""
     response = requests.get(
@@ -587,6 +605,18 @@ def main() -> int:
     )
     text_parser.add_argument("attachment_id")
     text_parser.set_defaults(func=cmd_text)
+
+    convert_parser = subparsers.add_parser(
+        "convert", help="Convert a local file (PDF etc.) to Markdown"
+    )
+    convert_parser.add_argument("path", help="Local file path, e.g. ./paper.pdf")
+    convert_parser.add_argument(
+        "-o",
+        "--output",
+        default=None,
+        help="Write Markdown to this file instead of stdout",
+    )
+    convert_parser.set_defaults(func=cmd_convert)
 
     note_parser = subparsers.add_parser(
         "note", help="Print the raw markdown of the item's linked note"
