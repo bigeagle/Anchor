@@ -154,6 +154,51 @@ def test_sync_roundtrip(device: TestClient, db_session, central):
     assert sync_client.get_sync_state(db_session).last_seq == 2
 
 
+def test_pull_multiple_changes_for_same_new_item(device, db_session, central):
+    """A pulled batch can create and then update an item unknown to the device."""
+    item_id = uuid.uuid4()
+
+    def seed_central():
+        session = central.central_session
+        item = Item(id=item_id, title="First", item_type="book")
+        session.add(item)
+        session.flush()
+        sync_service.push_changes(
+            session,
+            "device-b",
+            [
+                ChangeIn(
+                    object_type="item",
+                    object_id=item_id,
+                    op="upsert",
+                    payload=row_to_dict(item),
+                )
+            ],
+        )
+        item.title = "Second"
+        item.version = 2
+        sync_service.push_changes(
+            session,
+            "device-b",
+            [
+                ChangeIn(
+                    object_type="item",
+                    object_id=item_id,
+                    op="upsert",
+                    payload=row_to_dict(item),
+                )
+            ],
+        )
+
+    central.as_central(seed_central)
+
+    assert sync_client.pull_changes(db_session, central) == 2
+    local = db_session.get(Item, item_id)
+    assert local.title == "Second"
+    assert local.version == 2
+    assert sync_client.get_sync_state(db_session).last_seq == 2
+
+
 def test_pull_gap_bootstraps_from_snapshot(device: TestClient, db_session, central):
     """A 410 from /changes re-bootstraps the device from a snapshot."""
     # A local row created before this device ever synced (a "zombie").

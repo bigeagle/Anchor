@@ -81,6 +81,7 @@ def apply_change(db: Session, change: ChangeIn) -> None:
     obj = db.get(model, change.object_id)
     if obj is None:
         db.add(model(**data))
+        db.flush()
     else:
         for key, value in data.items():
             setattr(obj, key, value)
