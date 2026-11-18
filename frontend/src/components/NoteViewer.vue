@@ -14,6 +14,16 @@ marked.use({ extensions: katexExtensions });
 // matching how Obsidian displays metadata-ish blocks (e.g. a blockquote
 // with one field per line) instead of collapsing lines into one paragraph.
 marked.use({ breaks: true });
+// Emails stay plain text: marked's GFM autolinks (bare `a@b.com` and
+// `<a@b.com>`) would otherwise become clickable mailto: links.
+marked.use({
+  renderer: {
+    link({ href, tokens }) {
+      if (href?.startsWith('mailto:')) return this.parser.parseInline(tokens);
+      return false;
+    },
+  },
+});
 
 const props = defineProps<{
   itemId: string;
