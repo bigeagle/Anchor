@@ -132,10 +132,13 @@ def test_push_lww_overwrite(central: TestClient, db_session):
     assert item.version == 2
 
 
-def test_push_same_new_item_multiple_times_in_one_batch(
-    central: TestClient, db_session
-):
-    """A batch can create and then update an item unknown to the central."""
+def test_push_batch_with_duplicate_object_applies_last(central: TestClient, db_session):
+    """Two changes for the same object in one batch must not insert twice.
+
+    Sessions run with autoflush=False, so Session.get cannot see the pending
+    instance from the first change; without a session.new fallback the second
+    change inserts a duplicate row and the commit fails with IntegrityError.
+    """
     item_id = uuid.uuid4()
     response = _push(
         central,
@@ -154,9 +157,9 @@ def test_push_same_new_item_multiple_times_in_one_batch(
             },
         ],
     )
-
     assert response.status_code == 200
     assert response.json() == {"applied": 2, "latest_seq": 2}
+
     item = db_session.get(Item, item_id)
     assert item.title == "Second"
     assert item.version == 2
